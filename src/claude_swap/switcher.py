@@ -37,6 +37,7 @@ from claude_swap.json_output import (
     USAGE_TOKEN_EXPIRED,
     account_ref,
     account_row,
+    session_row,
     last_good_usage_fields,
     usage_fields,
     usage_freshness_fields,
@@ -60,6 +61,7 @@ from claude_swap.models import (
     SwitchTransaction,
     get_timestamp,
     normalize_alias,
+    normalize_icon,
 )
 from claude_swap.printer import (
     abbreviate_path,
@@ -1044,6 +1046,78 @@ class ClaudeAccountSwitcher:
         ]
         return sorted(rows, key=lambda r: int(r[0]))
 
+    def set_icon(self, identifier: str, icon: str) -> tuple[str, str]:
+        """Set the display icon (an emoji) for the account matching identifier.
+
+        Unlike an alias, an icon is pure decoration: it is never resolvable as
+        an account identifier, so there is no uniqueness constraint — two
+        accounts may share one.
+
+        Returns ``(account_num, normalized_icon)``.
+
+        Raises:
+            AccountNotFoundError: identifier doesn't match any account.
+            ValidationError: icon format is invalid.
+        """
+        self._refuse_session_shell()
+        try:
+            normalized = normalize_icon(icon)
+        except ValueError as e:
+            raise ValidationError(str(e)) from e
+
+        self._get_sequence_data_migrated()
+        account_num = self._resolve_account_identifier(identifier)
+        if not account_num:
+            raise AccountNotFoundError(
+                f"No account found with identifier: {identifier}"
+            )
+        data = self._get_sequence_data() or {}
+        record = data.get("accounts", {}).get(account_num)
+        if not record:
+            raise AccountNotFoundError(f"Account-{account_num} does not exist")
+
+        record["icon"] = normalized
+        data["lastUpdated"] = get_timestamp()
+        self._write_json(self.sequence_file, data)
+        return account_num, normalized
+
+    def unset_icon(self, identifier: str) -> str:
+        """Clear the icon for the account matching identifier.
+
+        Returns the account number. Idempotent, matching ``unset_alias``.
+
+        Raises:
+            AccountNotFoundError: identifier doesn't match any account.
+        """
+        self._refuse_session_shell()
+        self._get_sequence_data_migrated()
+        account_num = self._resolve_account_identifier(identifier)
+        if not account_num:
+            raise AccountNotFoundError(
+                f"No account found with identifier: {identifier}"
+            )
+        data = self._get_sequence_data() or {}
+        record = data.get("accounts", {}).get(account_num)
+        if not record:
+            raise AccountNotFoundError(f"Account-{account_num} does not exist")
+
+        if "icon" in record:
+            del record["icon"]
+            data["lastUpdated"] = get_timestamp()
+            self._write_json(self.sequence_file, data)
+        return account_num
+
+    def list_icons(self) -> list[tuple[str, str, str]]:
+        """Every set icon as ``(account_num, icon, email)``, slot-number order."""
+        data = self._get_sequence_data_migrated()
+        accounts = (data or {}).get("accounts", {})
+        rows = [
+            (num, acc.get("icon"), acc.get("email", ""))
+            for num, acc in accounts.items()
+            if acc.get("icon")
+        ]
+        return sorted(rows, key=lambda r: int(r[0]))
+
     def swap_accounts(self, first: str, second: str) -> tuple[str, str]:
         """Exchange two accounts' slot numbers (list order / numeric targets).
 
@@ -1658,6 +1732,37 @@ class ClaudeAccountSwitcher:
         )
         return slot, email
 
+    def build_mappings_payload(self) -> dict:
+        """Directory → account mappings as JSON (for `ccswap map --json`).
+
+        ``accountNumber`` is null when the mapped account has since been
+        removed — the mapping still exists and still resolves to nothing, so
+        the row is reported rather than hidden.
+        """
+        from claude_swap.mappings import MappingStore
+
+        mappings = MappingStore(self.backup_dir).all()
+        seq = self._get_sequence_data_migrated() or {}
+        rows = []
+        for path in sorted(mappings):
+            entry = mappings[path]
+            email = entry.get("email", "")
+            org_uuid = entry.get("organizationUuid", "") or ""
+            slot = self._find_account_slot(seq, email, org_uuid)
+            account = seq.get("accounts", {}).get(slot, {}) if slot else {}
+            rows.append(
+                {
+                    "path": path,
+                    "email": email,
+                    "organizationUuid": org_uuid,
+                    "organizationName": account.get("organizationName", ""),
+                    "accountNumber": int(slot) if slot else None,
+                    "alias": account.get("alias", ""),
+                    "icon": account.get("icon", ""),
+                }
+            )
+        return {"schemaVersion": SCHEMA_VERSION, "mappings": rows}
+
     def list_mappings(self) -> None:
         """Print all directory → account mappings (for `ccswap map`)."""
         from claude_swap.mappings import MappingStore
@@ -1761,6 +1866,7 @@ class ClaudeAccountSwitcher:
                     usage=entries[n],
                     alias=alias,
                     disabled=self._disabled_from_data(seq_data, n),
+                    icon=(seq_data.get("accounts", {}).get(n, {}) or {}).get("icon", ""),
                 )
             )
         return AccountsSnapshot(
@@ -3324,9 +3430,10 @@ class ClaudeAccountSwitcher:
         else:
             account_num = str(self._get_next_account_number())
 
-        # Capture any alias to carry forward before destructive cleanup below
+        # Capture any alias/icon to carry forward before destructive cleanup below
         # deletes the old record (same account moving slots, or refreshing in place).
         existing_alias = None
+        existing_icon = None
         if slot is not None:
             prior = data.get("accounts", {}).get(account_num) or {}
             if (
@@ -3334,8 +3441,10 @@ class ClaudeAccountSwitcher:
                 and prior.get("organizationUuid", "") == current_org_uuid
             ):
                 existing_alias = prior.get("alias")
+                existing_icon = prior.get("icon")
             if migrate_from:
                 existing_alias = data["accounts"][migrate_from].get("alias") or existing_alias
+                existing_icon = data["accounts"][migrate_from].get("icon") or existing_icon
 
         if alias is not None:
             conflict = self._alias_in_use(alias, exclude_num=account_num)
@@ -3406,6 +3515,9 @@ class ClaudeAccountSwitcher:
         carried_alias = alias if alias is not None else existing_alias
         if carried_alias:
             data["accounts"][account_num]["alias"] = carried_alias
+        # Icons have no --icon flag on add, so they are only ever carried, never set here.
+        if existing_icon:
+            data["accounts"][account_num]["icon"] = existing_icon
         if int(account_num) not in data["sequence"]:
             data["sequence"].append(int(account_num))
             data["sequence"].sort()
@@ -4594,6 +4706,7 @@ class ClaudeAccountSwitcher:
         fetch: set[str] | None = None,
         *,
         scheduled: bool = False,
+        max_age: float | None = None,
     ) -> dict[str, UsageEntry]:
         """Store-backed usage collection: one :class:`UsageEntry` per account.
 
@@ -4610,6 +4723,11 @@ class ClaudeAccountSwitcher:
         the same plan. A failed fetch only updates the entry's error/backoff
         fields, so the last-good measurement keeps being served
         (stale-on-error).
+
+        ``max_age`` (on-demand callers only) is the caller's freshness bar in
+        seconds, overriding the store's serve TTL — a hint, never a guarantee:
+        a fetch that fails still serves the last-good measurement, and every
+        returned entry carries its age so callers can show how old it is.
         """
         store = self._usage_store
         identities = {
@@ -4663,6 +4781,7 @@ class ClaudeAccountSwitcher:
                 identities,
                 respect_plans=True,
                 repair_overslept=True,
+                serve_ttl=max_age,
             )
         else:
             claims = store.reserve(
@@ -5094,6 +5213,41 @@ class ClaudeAccountSwitcher:
                 seen[key] = snum
         return out
 
+    def _profile_session_rows(self, account_num: str, email: str) -> list[dict]:
+        """Live sessions running against one account's own session profile.
+
+        Best-effort: session detection reads pid files that may be absent,
+        unreadable, or mid-write, and a display payload must never fail because
+        of it. Returns an empty list on any problem.
+        """
+        from claude_swap.session import scan_live_sessions, session_dir_for
+
+        try:
+            session_dir = session_dir_for(self.backup_dir, account_num, email)
+            # The unreadable-record count is dropped on purpose: it exists so
+            # callers gating a destructive step cannot mistake "unreadable" for
+            # "nothing running", and this payload gates nothing.
+            sessions, _unreadable = scan_live_sessions(session_dir)
+            return [session_row(s, profile="session") for s in sessions]
+        except Exception as e:  # pragma: no cover - defensive, see docstring
+            self._logger.debug("Session scan failed for account %s: %s", account_num, e)
+            return []
+
+    def _default_profile_session_rows(self) -> list[dict]:
+        """Live sessions running against the shared default profile.
+
+        These are attributed to the currently active account by the caller —
+        correct for a session started under the current login, wrong for one
+        that outlived a switch. Same best-effort posture as above.
+        """
+        from claude_swap.process_detection import list_sessions
+
+        try:
+            return [session_row(s, profile="default") for s in list_sessions()]
+        except Exception as e:  # pragma: no cover - defensive, see docstring
+            self._logger.debug("Default-profile session scan failed: %s", e)
+            return []
+
     def _build_list_payload(
         self,
         accounts_info: list[tuple[int, str, str, str, bool, str, str]],
@@ -5103,10 +5257,19 @@ class ClaudeAccountSwitcher:
         active_num: int | None = None
         accounts = []
         seq_data = self._get_sequence_data() or {}
+        seq_accounts = seq_data.get("accounts", {})
+        default_sessions = self._default_profile_session_rows()
         for num, email, org_name, org_uuid, is_active, _, alias in accounts_info:
             if is_active:
                 active_num = num
             entry = entries[str(num)]
+            # Exact attribution: sessions running against this account's own
+            # session profile. The active account additionally carries the
+            # default-profile sessions, which are only best-effort (see
+            # ``session_row``).
+            sessions = self._profile_session_rows(str(num), email)
+            if is_active:
+                sessions = sessions + default_sessions
             # JSON carries the decision-grade value: last-good only while it is
             # recent enough to act on (≤ STALE_OK_S), else unavailable. Showing
             # older measurements is a human-display affordance only — scripts
@@ -5120,6 +5283,8 @@ class ClaudeAccountSwitcher:
                     last_good_usage=entry.last_good,
                     alias=alias,
                     disabled=self._disabled_from_data(seq_data, str(num)),
+                    icon=(seq_accounts.get(str(num), {}) or {}).get("icon", ""),
+                    sessions=sessions,
                 )
             )
         payload = {
@@ -5145,6 +5310,7 @@ class ClaudeAccountSwitcher:
         show_token_status: bool = False,
         json_output: bool = False,
         fetch: set[str] | None = None,
+        max_age: float | None = None,
     ) -> dict | None:
         """List all managed accounts.
 
@@ -5169,7 +5335,7 @@ class ClaudeAccountSwitcher:
             return None
 
         accounts_info = self._build_accounts_info()
-        entries = self._collect_usage_entries(accounts_info, fetch=fetch)
+        entries = self._collect_usage_entries(accounts_info, fetch=fetch, max_age=max_age)
 
         if json_output:
             return self._build_list_payload(accounts_info, entries)
@@ -5241,7 +5407,8 @@ class ClaudeAccountSwitcher:
             self._logger.debug("Failed to detect running instances", exc_info=True)
 
     def _active_account_usage(
-        self, account_num: str, current_email: str, org_uuid: str
+        self, account_num: str, current_email: str, org_uuid: str,
+        max_age: float | None = None,
     ) -> UsageEntry:
         """Store-backed usage entry for just the active account.
 
@@ -5254,9 +5421,9 @@ class ClaudeAccountSwitcher:
         creds = active.value or ""
         self._record_active_verdict(active)
         info = (int(account_num), current_email, "", org_uuid or "", True, creds, "")
-        return self._collect_usage_entries([info])[str(account_num)]
+        return self._collect_usage_entries([info], max_age=max_age)[str(account_num)]
 
-    def _build_status_payload(self) -> dict:
+    def _build_status_payload(self, max_age: float | None = None) -> dict:
         """Build the ``--status --json`` payload (no active / unmanaged / managed)."""
         identity = self._get_current_account()
         if identity is None:
@@ -5281,7 +5448,7 @@ class ClaudeAccountSwitcher:
         org_name = acct.get("organizationName", "") or ""
         org_uuid = acct.get("organizationUuid", "") or ""
         alias = acct.get("alias", "") or ""
-        entry = self._active_account_usage(account_num, current_email, org_uuid)
+        entry = self._active_account_usage(account_num, current_email, org_uuid, max_age)
         # Decision-grade projection, same rule as the --list payload: stale
         # beyond STALE_OK_S reports unavailable, not "ok" with old numbers.
         status, usage = usage_fields(entry.decision_value(), entry.fetched_at)
@@ -5311,10 +5478,10 @@ class ClaudeAccountSwitcher:
             "totalManagedAccounts": len(data.get("accounts", {})),
         }
 
-    def status(self, json_output: bool = False) -> dict | None:
+    def status(self, json_output: bool = False, max_age: float | None = None) -> dict | None:
         """Display current account status (or return the schema-v1 payload)."""
         if json_output:
-            return self._build_status_payload()
+            return self._build_status_payload(max_age)
 
         identity = self._get_current_account()
         if identity is None:

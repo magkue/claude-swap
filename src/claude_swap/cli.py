@@ -261,14 +261,25 @@ Examples:
         help="Directory to map (default: current directory)",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the mapping list as JSON (listing only)",
+    )
     args = parser.parse_args(argv)
+
+    if args.json and args.account is not None:
+        parser.error("--json can only be used when listing mappings")
 
     try:
         switcher = ClaudeAccountSwitcher(debug=args.debug)
         _guard_root(switcher)
 
         if args.account is None:
-            switcher.list_mappings()
+            if args.json:
+                print(json.dumps(switcher.build_mappings_payload(), indent=2))
+            else:
+                switcher.list_mappings()
             return
 
         from claude_swap.mappings import MappingStore, normalize_path
@@ -553,6 +564,84 @@ Examples:
         else:
             account_num, normalized = switcher.set_alias(args.account, args.alias_name)
             print(f"{accent('Set alias')} '{normalized}' for Account {account_num}")
+    except ClaudeSwitchError as e:
+        error(f"Error: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print(f"\n{dimmed('Operation cancelled')}")
+        sys.exit(130)
+
+
+def _icon_command(argv: list[str]) -> None:
+    """Handle `ccswap icon [NUM|EMAIL] [EMOJI] [--unset]`.
+
+    With no arguments, lists all icons. Otherwise sets (or, with --unset,
+    removes) the display icon for the given account. Pre-dispatched before the
+    main parser for the same reason as `alias`.
+
+    An icon is decoration only — unlike an alias it is never accepted as an
+    account identifier, so nothing else in the CLI has to learn about it.
+    """
+    parser = argparse.ArgumentParser(
+        prog="ccswap icon",
+        description=(
+            "Set, remove, or list a display icon (emoji) for an account. "
+            "Icons are shown in the menu bar and in the Raycast extension to "
+            "tell accounts apart at a glance; they are decoration only and "
+            "cannot be used to identify an account."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  ccswap icon 1 💼
+  ccswap icon user@example.com 🏠
+  ccswap icon 1 --unset
+  ccswap icon                          # list all icons
+        """,
+    )
+    parser.add_argument(
+        "account",
+        nargs="?",
+        metavar="NUM|EMAIL",
+        help="Account to set an icon for (number, email, or alias). Omit to list icons.",
+    )
+    parser.add_argument(
+        "icon",
+        nargs="?",
+        metavar="EMOJI",
+        help="Icon to set (a single emoji; no whitespace).",
+    )
+    parser.add_argument("--unset", action="store_true", help="Remove the account's icon")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    args = parser.parse_args(argv)
+
+    if args.unset and args.icon:
+        parser.error("--unset does not take an EMOJI argument")
+    if args.unset and args.account is None:
+        parser.error("NUM|EMAIL is required with --unset")
+    if args.account is not None and not args.unset and not args.icon:
+        parser.error("EMOJI is required (or pass --unset to remove the icon)")
+
+    try:
+        switcher = ClaudeAccountSwitcher(debug=args.debug)
+        _guard_root(switcher)
+
+        if args.account is None:
+            rows = switcher.list_icons()
+            if not rows:
+                print(dimmed("No icons set"))
+                return
+            print(bolded("Icons:"))
+            for num, icon, email in rows:
+                print(f"  {num}: {icon} {muted(f'({email})')}")
+            return
+
+        if args.unset:
+            account_num = switcher.unset_icon(args.account)
+            print(f"{accent('Removed icon')} for Account {account_num}")
+        else:
+            account_num, normalized = switcher.set_icon(args.account, args.icon)
+            print(f"{accent('Set icon')} '{normalized}' for Account {account_num}")
     except ClaudeSwitchError as e:
         error(f"Error: {e}")
         sys.exit(1)
@@ -941,6 +1030,9 @@ def main() -> None:
     if argv and argv[0] == "alias":
         _alias_command(argv[1:])
         return
+    if argv and argv[0] == "icon":
+        _icon_command(argv[1:])
+        return
     if argv and argv[0] == "swap":
         _swap_command(argv[1:])
         return
@@ -983,6 +1075,9 @@ Commands:
   %(prog)s alias <num|email> <name>   set a short alias for an account
   %(prog)s alias <num|email> --unset  remove an account's alias
   %(prog)s alias                      list all aliases
+  %(prog)s icon <num|email> <emoji>   set a display icon for an account
+  %(prog)s icon <num|email> --unset   remove an account's icon
+  %(prog)s icon                       list all icons
   %(prog)s swap <a> <b>               exchange two accounts' slot numbers
   %(prog)s move <a> <slot>            assign an account to a slot (swaps if taken)
   %(prog)s auto                       auto-switch when nearing rate limits
@@ -1029,6 +1124,18 @@ The original flag spellings (%(prog)s --switch, %(prog)s --list, ...) keep worki
         "--token-status",
         action="store_true",
         help="Show source-labelled OAuth token diagnostics (use with 'list')",
+    )
+    parser.add_argument(
+        "--max-age",
+        type=float,
+        metavar="SECONDS",
+        help=(
+            "With 'list' or 'status': accept usage no older than SECONDS, "
+            "refetching only the accounts that are staler than that. A hint, "
+            "not a guarantee — a failed fetch still serves the last-good "
+            "measurement, so always read usageAgeSeconds. Rate-limit backoff "
+            "is never bypassed"
+        ),
     )
     parser.add_argument(
         "--json",
@@ -1221,6 +1328,12 @@ The original flag spellings (%(prog)s --switch, %(prog)s --list, ...) keep worki
     if args.json and not (args.list or args.status or args.switch or args.switch_to):
         parser.error("--json can only be used with 'list', 'status', or 'switch'")
 
+    if args.max_age is not None:
+        if not (args.list or args.status):
+            parser.error("--max-age can only be used with 'list' or 'status'")
+        if args.max_age < 0:
+            parser.error("--max-age must not be negative")
+
     if args.json and args.token_status:
         # Token status is not part of the JSON v1 schema; reject rather than
         # silently ignore it (a future additive field can add it).
@@ -1300,6 +1413,7 @@ The original flag spellings (%(prog)s --switch, %(prog)s --list, ...) keep worki
             payload = switcher.list_accounts(
                 show_token_status=args.token_status,
                 json_output=args.json,
+                max_age=args.max_age,
             )
         elif args.switch:
             from claude_swap.settings import load_settings, parse_model_names
@@ -1328,7 +1442,7 @@ The original flag spellings (%(prog)s --switch, %(prog)s --list, ...) keep worki
                 args.switch_to, json_output=args.json, force=args.force
             )
         elif args.status:
-            payload = switcher.status(json_output=args.json)
+            payload = switcher.status(json_output=args.json, max_age=args.max_age)
         elif args.purge:
             switcher.purge()
         elif args.export:

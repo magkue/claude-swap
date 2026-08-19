@@ -15,6 +15,7 @@ from claude_swap.json_output import (
     SCHEMA_VERSION,
     account_row,
     error_envelope,
+    session_row,
     usage_fields,
     usage_to_json,
 )
@@ -667,3 +668,61 @@ class TestAccountRowDisabled:
     def test_disabled_absent_by_default(self):
         row = account_row(1, "a@example.com", "", "", False, None)
         assert "disabled" not in row
+
+
+class TestAccountRowIconAndSessions:
+    """Additive fork fields on --list rows: ``icon`` and ``sessions``."""
+
+    def test_icon_included_when_set(self):
+        row = account_row(2, "b@example.com", "", "", False, None, icon="💼")
+        assert row["icon"] == "💼"
+
+    def test_icon_absent_by_default(self):
+        row = account_row(1, "a@example.com", "", "", False, None)
+        assert "icon" not in row
+
+    def test_sessions_absent_when_empty(self):
+        """An account with nothing running carries no key at all, so a
+        consumer cannot tell "idle" apart from an older ccswap by shape."""
+        row = account_row(1, "a@example.com", "", "", False, None, sessions=[])
+        assert "sessions" not in row
+
+    def test_sessions_included_when_present(self):
+        row = account_row(
+            1, "a@example.com", "", "", False, None, sessions=[{"pid": 1}]
+        )
+        assert row["sessions"] == [{"pid": 1}]
+
+
+class _FakeSession:
+    def __init__(self, status=None, started_at=0):
+        self.pid = 4242
+        self.session_id = "sess-1"
+        self.cwd = "/Users/x/code/proj"
+        self.kind = "interactive"
+        self.entrypoint = "cli"
+        self.status = status
+        self.started_at = started_at
+
+
+class TestSessionRow:
+    def test_core_fields_and_profile(self):
+        row = session_row(_FakeSession(), profile="session")
+        assert row["pid"] == 4242
+        assert row["cwd"] == "/Users/x/code/proj"
+        assert row["kind"] == "interactive"
+        assert row["profile"] == "session"
+
+    def test_status_omitted_when_unknown(self):
+        assert "status" not in session_row(_FakeSession(), profile="default")
+
+    def test_status_included_when_known(self):
+        row = session_row(_FakeSession(status="busy"), profile="default")
+        assert row["status"] == "busy"
+
+    def test_started_at_normalized_from_epoch_millis(self):
+        row = session_row(_FakeSession(started_at=1700000000000), profile="session")
+        assert row["startedAt"] == "2023-11-14T22:13:20Z"
+
+    def test_started_at_omitted_when_absent(self):
+        assert "startedAt" not in session_row(_FakeSession(), profile="session")

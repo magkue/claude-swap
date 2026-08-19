@@ -281,9 +281,16 @@ def format_account_label(
     alias: str | None = None,
     disabled: bool = False,
     fetched_at: float | None = None,
+    icon: str | None = None,
 ) -> str:
-    """Build one account row's menu label."""
+    """Build one account row's menu label.
+
+    The icon (``ccswap icon``) leads the row so accounts stay distinguishable
+    at a glance without reading the address; rows without one are unchanged.
+    """
     label = f"{alias}  ({email})" if alias else email
+    if icon:
+        label = f"{icon}  {label}"
     marker = "  (disabled)" if disabled else ""
     return f"{num}  {label}{marker}  {usage_summary(usage, now, fetched_at)}"
 
@@ -302,12 +309,20 @@ def format_title(
     settings: MenuBarSettings,
     now: float | None = None,
     alias: str | None = None,
+    icon: str | None = None,
 ) -> str:
-    """Build the menu-bar title from the active account and settings."""
+    """Build the menu-bar title from the active account and settings.
+
+    An account icon, when set, replaces the ``⇄`` glyph entirely rather than
+    stacking with it — menu bar width is scarce and two leading symbols read as
+    noise. It shows regardless of ``show_account_name``, since identifying the
+    account is the whole point of setting one.
+    """
     if active_email is None:
         return ICON
     if now is None:
         now = time.time()
+    lead = icon or ICON
     segments: list[str] = []
     if settings.show_account_name:
         segments.append(alias if alias else _local_part(active_email))
@@ -329,8 +344,8 @@ def format_title(
             if isinstance(window, dict) and isinstance(window.get("pct"), (int, float)) and window.get("name"):
                 segments.append(f"{window['name']} {window['pct']:.0f}%")
     if not segments:
-        return ICON
-    return f"{ICON} " + " · ".join(segments)
+        return lead
+    return f"{lead} " + " · ".join(segments)
 
 
 def format_usage_log(email: str, usage: dict | str | None) -> str | None:
@@ -403,15 +418,16 @@ EMPTY_SNAPSHOT: dict = {
     "active_email": None,
     "active_usage": None,
     "active_alias": None,
+    "active_icon": None,
 }
 
 
 def _adapt_snapshot(snap) -> dict:
     """Adapt an ``AccountsSnapshot`` to the menu bar's render dict.
 
-    Shape: ``{"accounts": [(num, email, is_active, display_usage, last_good, alias, disabled, fetched_at), ...],
+    Shape: ``{"accounts": [(num, email, is_active, display_usage, last_good, alias, disabled, fetched_at, icon), ...],
     "active_email": str | None, "active_usage": dict | str | None,
-    "active_alias": str | None}``. The snapshot itself is produced by
+    "active_alias": str | None, "active_icon": str | None}``. The snapshot itself is produced by
     ``SnapshotSource`` (the paced read path), so this is a pure transform — no
     fetching, no I/O. Per-account ``fetched_at`` is the underlying
     measurement's fetch time, used only for the pace marker (issue #125).
@@ -420,21 +436,24 @@ def _adapt_snapshot(snap) -> dict:
     active_email = None
     active_usage = None
     active_alias = None
+    active_icon = None
     for acc in snap.accounts:
         display = _account_display_usage(acc.usage)
         accounts.append(
             (
                 acc.number, acc.email, acc.is_active, display, acc.usage.last_good,
-                acc.alias, acc.disabled, acc.usage.fetched_at,
+                acc.alias, acc.disabled, acc.usage.fetched_at, acc.icon,
             )
         )
         if acc.is_active:
             active_email, active_usage, active_alias = acc.email, display, acc.alias
+            active_icon = acc.icon
     return {
         "accounts": accounts,
         "active_email": active_email,
         "active_usage": active_usage,
         "active_alias": active_alias,
+        "active_icon": active_icon,
     }
 
 
@@ -656,13 +675,15 @@ def run(switcher) -> int:
                 self.snapshot["active_usage"],
                 self.settings,
                 alias=self.snapshot.get("active_alias"),
+                icon=self.snapshot.get("active_icon"),
             )
             self.menu.clear()
             account_items = []
-            for num, email, is_active, display, _last_good, alias, disabled, fetched_at in self.snapshot["accounts"]:
+            for num, email, is_active, display, _last_good, alias, disabled, fetched_at, icon in self.snapshot["accounts"]:
                 item = rumps.MenuItem(
                     format_account_label(
-                        num, email, display, alias=alias, disabled=disabled, fetched_at=fetched_at
+                        num, email, display, alias=alias, disabled=disabled,
+                        fetched_at=fetched_at, icon=icon,
                     ),
                     callback=self._make_switch_to(num),
                 )

@@ -1682,3 +1682,60 @@ class TestStruckFingerprintHygiene:
         )
         store.clear_dead_token(["1"], ident)
         assert store.entries(ident)["1"].struck_fingerprint is None
+
+
+class TestServeTtlOverride:
+    """``--max-age`` lowers (or raises) the freshness bar a caller accepts.
+
+    Exercised through ``_row_eligible`` directly: it is where the whole
+    override lives, and driving it from the store would obscure which of the
+    several veto conditions produced a result.
+    """
+
+    def _row(self, fetched_at, next_poll_at=None):
+        row = {"fetchedAt": fetched_at}
+        if next_poll_at is not None:
+            row["nextPollAt"] = next_poll_at
+        return row
+
+    def test_default_serves_within_the_store_ttl(self):
+        # 60s old, plan not due: the untightened on-demand path leaves it alone.
+        row = self._row(fetched_at=1000.0, next_poll_at=2000.0)
+        assert not usage_store._row_eligible(row, 1060.0, respect_plans=True)
+
+    def test_tightened_bar_makes_a_recent_row_eligible(self):
+        # Same row, but the caller will not accept anything older than 30s.
+        row = self._row(fetched_at=1000.0, next_poll_at=2000.0)
+        assert usage_store._row_eligible(
+            row, 1060.0, respect_plans=True, serve_ttl=30.0
+        )
+
+    def test_tightened_bar_still_respects_a_fresh_enough_row(self):
+        row = self._row(fetched_at=1000.0, next_poll_at=2000.0)
+        assert not usage_store._row_eligible(
+            row, 1010.0, respect_plans=True, serve_ttl=30.0
+        )
+
+    def test_raised_bar_suppresses_a_fetch_the_default_would_allow(self):
+        # 200s old (past the 180s serve TTL) and poll-due, but the caller is
+        # happy with anything under 600s.
+        row = self._row(fetched_at=1000.0, next_poll_at=1100.0)
+        assert usage_store._row_eligible(row, 1200.0, respect_plans=True)
+        assert not usage_store._row_eligible(
+            row, 1200.0, respect_plans=True, serve_ttl=600.0
+        )
+
+    def test_backoff_still_vetoes_a_tightened_bar(self):
+        """The override waives the poll plan, never the rate-limit guards."""
+        row = self._row(fetched_at=1000.0, next_poll_at=2000.0)
+        row["backoffUntil"] = 5000.0
+        assert not usage_store._row_eligible(
+            row, 1060.0, respect_plans=True, serve_ttl=1.0
+        )
+
+    def test_dead_token_quarantine_still_vetoes_a_tightened_bar(self):
+        row = self._row(fetched_at=1000.0, next_poll_at=2000.0)
+        row["authDeadStrikes"] = 99
+        assert not usage_store._row_eligible(
+            row, 1060.0, respect_plans=True, serve_ttl=1.0
+        )

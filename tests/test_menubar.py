@@ -238,6 +238,18 @@ def test_format_account_label_disabled_marker():
     assert label == "2  loc@papaya.asia  (disabled)  5h 42% · 7d 18% · $ 30%"
 
 
+def test_format_account_label_with_icon():
+    label = menubar.format_account_label(2, "loc@papaya.asia", _USAGE, icon="💼")
+    assert label == "2  💼  loc@papaya.asia  5h 42% · 7d 18% · $ 30%"
+
+
+def test_format_account_label_icon_leads_the_alias():
+    label = menubar.format_account_label(
+        2, "loc@papaya.asia", _USAGE, alias="dev", icon="💼"
+    )
+    assert label == "2  💼  dev  (loc@papaya.asia)  5h 42% · 7d 18% · $ 30%"
+
+
 # --- usage logging -------------------------------------------------------------
 
 def test_format_usage_log_full():
@@ -295,6 +307,18 @@ def test_format_title_name_only_when_pct_off():
 def test_format_title_5h_only():
     s = menubar.MenuBarSettings(show_account_name=False, title_pct="5h")
     assert menubar.format_title("loc@papaya.asia", _USAGE, s) == "⇄ 42%"
+
+
+def test_format_title_icon_replaces_the_glyph():
+    # Menu bar width is scarce: an account icon stands in for ⇄ rather than
+    # stacking with it.
+    s = menubar.MenuBarSettings(show_account_name=False, title_pct="5h")
+    assert menubar.format_title("loc@papaya.asia", _USAGE, s, icon="💼") == "💼 42%"
+
+
+def test_format_title_icon_shows_without_the_account_name():
+    s = menubar.MenuBarSettings(show_account_name=False, title_pct="off")
+    assert menubar.format_title("loc@papaya.asia", _USAGE, s, icon="💼") == "💼"
 
 
 def test_format_title_7d_only():
@@ -449,13 +473,14 @@ class _FakeEntry:
 
 
 class _FakeAcct:
-    def __init__(self, number, email, is_active, usage, alias="", disabled=False):
+    def __init__(self, number, email, is_active, usage, alias="", disabled=False, icon=""):
         self.number = number
         self.email = email
         self.is_active = is_active
         self.usage = usage
         self.alias = alias
         self.disabled = disabled
+        self.icon = icon
 
 
 class _FakeSnap:
@@ -484,11 +509,11 @@ def test_adapt_snapshot_shape_and_active_selection():
     assert snap["active_email"] == "a@x.com"
     assert snap["active_usage"] == lg
     assert snap["active_alias"] == ""
-    # (num, email, is_active, display_usage, last_good, alias, disabled, fetched_at)
-    assert snap["accounts"][0] == ("1", "a@x.com", True, lg, lg, "", False, 123.0)
+    # (num, email, is_active, display_usage, last_good, alias, disabled, fetched_at, icon)
+    assert snap["accounts"][0] == ("1", "a@x.com", True, lg, lg, "", False, 123.0, "")
     # sentinel account: display is the human note, last_good/fetched_at are None; disabled carried through
     assert snap["accounts"][1] == (
-        "2", "b@x.com", False, menubar.SENTINEL_NOTES[USAGE_API_KEY], None, "", True, None,
+        "2", "b@x.com", False, menubar.SENTINEL_NOTES[USAGE_API_KEY], None, "", True, None, "",
     )
 
 

@@ -47,6 +47,35 @@ def normalize_alias(name: str) -> str:
     return normalized
 
 
+#: Icon length cap, in codepoints. An icon is meant to be one glyph, but a
+#: single emoji is routinely several codepoints (skin-tone modifiers, ZWJ
+#: sequences, variation selectors), so the cap is generous rather than 1.
+_ICON_MAX_CODEPOINTS = 8
+
+
+def normalize_icon(icon: str) -> str:
+    """Validate a proposed per-account display icon; raise ValueError if invalid.
+
+    Deliberately permissive about *which* character: any emoji or symbol is
+    fine, and enforcing an emoji-only rule would mean shipping a Unicode
+    property table that goes stale every release. What is enforced is that the
+    value stays a compact, single-glyph decoration: non-empty, no whitespace
+    (it is rendered inline in menu-bar titles where a space would split it from
+    its label), and short.
+    """
+    normalized = icon.strip()
+    if not normalized:
+        raise ValueError("icon cannot be empty")
+    if any(ch.isspace() for ch in normalized):
+        raise ValueError(f"icon '{icon}' cannot contain whitespace")
+    if len(normalized) > _ICON_MAX_CODEPOINTS:
+        raise ValueError(
+            f"icon '{icon}' is too long "
+            f"(max {_ICON_MAX_CODEPOINTS} codepoints; use a single emoji)"
+        )
+    return normalized
+
+
 class Platform(Enum):
     """Supported platforms."""
 
@@ -140,6 +169,7 @@ class AccountSnapshot:
     usage: UsageEntry
     alias: str = ""
     disabled: bool = False  # held out of auto-rotation (still a valid explicit target)
+    icon: str = ""  # display-only emoji (``ccswap icon``); never an identifier
 
     @property
     def display_tag(self) -> str:

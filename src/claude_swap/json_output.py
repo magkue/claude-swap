@@ -221,6 +221,8 @@ def account_row(
     last_good_usage: dict | None = None,
     alias: str = "",
     disabled: bool = False,
+    icon: str = "",
+    sessions: list[dict] | None = None,
 ) -> dict:
     """A full account row for ``--list``."""
     status, usage = usage_fields(usage_entry, usage_fetched_at)
@@ -240,6 +242,11 @@ def account_row(
     # existing consumers keying on the base schema are unaffected.
     if disabled:
         row["disabled"] = True
+    # Additive fork fields, both omitted when empty for the same reason.
+    if icon:
+        row["icon"] = icon
+    if sessions:
+        row["sessions"] = sessions
     if usage is not None:
         row.update(usage_freshness_fields(usage_fetched_at, usage_age_s))
     else:
@@ -247,6 +254,41 @@ def account_row(
             last_good_usage_fields(
                 last_good_usage, usage_fetched_at, usage_age_s
             )
+        )
+    return row
+
+
+def session_row(session, *, profile: str) -> dict:
+    """Project one live Claude Code session for the ``sessions`` array.
+
+    ``profile`` records how the session was attributed to its account:
+
+    - ``"session"`` — the session runs against that account's own session
+      profile, so the attribution is exact.
+    - ``"default"`` — the session runs against the shared default profile, so
+      it is attributed to whichever account is *currently* active. A session
+      that started before a switch is still burning the account it started on,
+      and nothing on disk records which that was; consumers should present
+      these as best-effort.
+
+    ``startedAt`` is normalized from the record's epoch milliseconds to the
+    same ISO-8601 Z form the usage timestamps use.
+    """
+    row = {
+        "pid": session.pid,
+        "sessionId": session.session_id,
+        "cwd": session.cwd,
+        "kind": session.kind,
+        "entrypoint": session.entrypoint,
+        "profile": profile,
+    }
+    if session.status is not None:
+        row["status"] = session.status
+    if session.started_at:
+        row["startedAt"] = (
+            datetime.fromtimestamp(session.started_at / 1000, tz=timezone.utc)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
         )
     return row
 

@@ -988,6 +988,7 @@ class UsageStore:
         *,
         respect_plans: bool,
         repair_overslept: bool = False,
+        serve_ttl: float | None = None,
     ) -> dict[str, str]:
         """Atomically win the right to fetch: re-check eligibility and stamp
         a bounded lease in one locked pass, returning slot → fencing id.
@@ -1026,7 +1027,7 @@ class UsageStore:
                 else:
                     assert isinstance(row, dict)
                     if not _row_eligible(
-                        row, now, respect_plans, repair_overslept
+                        row, now, respect_plans, repair_overslept, serve_ttl
                     ):
                         continue
                 claim_id = uuid.uuid4().hex
@@ -1183,10 +1184,23 @@ def _num_or_none(value: object) -> float | None:
 
 
 def _row_eligible(
-    row: dict, now: float, respect_plans: bool, repair_overslept: bool = False
+    row: dict,
+    now: float,
+    respect_plans: bool,
+    repair_overslept: bool = False,
+    serve_ttl: float | None = None,
 ) -> bool:
     """Fetch eligibility of a stored row, evaluated under the write lock
-    (see :meth:`UsageStore.reserve` for the two caller modes)."""
+    (see :meth:`UsageStore.reserve` for the two caller modes).
+
+    ``serve_ttl`` overrides ``SERVE_TTL_S`` for the staleness test only — the
+    freshness bar a caller is willing to accept (``ccswap ... --max-age``). A
+    *lower* bar additionally waives the poll-plan gate, because the plan is a
+    cadence optimization rather than a safety mechanism and honoring it would
+    make a tightened bar unreachable. The actual rate-limit protections are
+    untouched: dead-token quarantine, failure backoff, and live claims all
+    still veto, so no override can hammer a token that just 429'd.
+    """
     if int(row.get("authDeadStrikes") or 0) >= AUTH_DEAD_STRIKES:
         return False
     backoff_until = _num_or_none(row.get("backoffUntil"))
@@ -1198,8 +1212,10 @@ def _row_eligible(
         now,
     ):
         return False
+    ttl = SERVE_TTL_S if serve_ttl is None else serve_ttl
+    tightened = serve_ttl is not None and serve_ttl < SERVE_TTL_S
     fetched_at = _num_or_none(row.get("fetchedAt"))
-    stale = fetched_at is None or (now - fetched_at) > SERVE_TTL_S
+    stale = fetched_at is None or (now - fetched_at) > ttl
     next_poll_at = _num_or_none(row.get("nextPollAt"))
     poll_due = next_poll_at is not None and now >= next_poll_at
     overslept = repair_overslept and _plan_oversleeps_interval(
@@ -1208,6 +1224,8 @@ def _row_eligible(
         now,
     )
     if respect_plans:
+        if tightened:
+            return stale
         return stale and (poll_due or next_poll_at is None or overslept)
     if repair_overslept:
         return poll_due or (stale and (next_poll_at is None or overslept))

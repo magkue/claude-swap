@@ -149,6 +149,7 @@ class TestCLI:
         switcher_cls.return_value.list_accounts.assert_called_once_with(
             show_token_status=True,
             json_output=False,
+            max_age=None,
         )
 
     def test_strategy_best_requires_switch(self, capsys):
@@ -741,7 +742,7 @@ class TestSubcommandAliases:
             switcher_cls.return_value.list_accounts.return_value = payload
             cli.main()
         switcher_cls.return_value.list_accounts.assert_called_once_with(
-            show_token_status=False, json_output=True,
+            show_token_status=False, json_output=True, max_age=None,
         )
 
     def test_run_subcommand_still_dispatches(self):
@@ -804,7 +805,7 @@ class TestJsonOutputCli:
             cli.main()
 
         switcher_cls.return_value.list_accounts.assert_called_once_with(
-            show_token_status=False, json_output=True,
+            show_token_status=False, json_output=True, max_age=None,
         )
         out = capsys.readouterr().out
         assert json.loads(out) == payload  # exactly one JSON object, no extra text
@@ -1281,6 +1282,98 @@ class TestAliasCommand:
         with patch("os.geteuid", return_value=1000, create=True):
             with pytest.raises(SystemExit):
                 cli._alias_command(["2", "dev", "--unset"])
+
+
+class TestIconCommand:
+    """`ccswap icon` — set/unset/list a display emoji for an account."""
+
+    def _seeded_switcher_env(self, temp_home):
+        switcher = ClaudeAccountSwitcher()
+        switcher._setup_directories()
+        switcher._init_sequence_file()
+        data = switcher._get_sequence_data()
+        data["accounts"]["2"] = {
+            "email": "work@co.com",
+            "uuid": "u2",
+            "organizationUuid": "",
+            "organizationName": "",
+            "added": "2024-01-01T00:00:00Z",
+        }
+        data["sequence"] = [2]
+        switcher._write_json(switcher.sequence_file, data)
+        return switcher
+
+    def test_set_icon_by_number(self, temp_home, capsys):
+        self._seeded_switcher_env(temp_home)
+        with patch("os.geteuid", return_value=1000, create=True):
+            cli._icon_command(["2", "💼"])
+
+        data = ClaudeAccountSwitcher()._get_sequence_data()
+        assert data["accounts"]["2"]["icon"] == "💼"
+        assert "💼" in capsys.readouterr().out
+
+    def test_set_icon_by_email(self, temp_home, capsys):
+        self._seeded_switcher_env(temp_home)
+        with patch("os.geteuid", return_value=1000, create=True):
+            cli._icon_command(["work@co.com", "🏠"])
+
+        data = ClaudeAccountSwitcher()._get_sequence_data()
+        assert data["accounts"]["2"]["icon"] == "🏠"
+
+    def test_unset_icon(self, temp_home, capsys):
+        switcher = self._seeded_switcher_env(temp_home)
+        data = switcher._get_sequence_data()
+        data["accounts"]["2"]["icon"] = "💼"
+        switcher._write_json(switcher.sequence_file, data)
+
+        with patch("os.geteuid", return_value=1000, create=True):
+            cli._icon_command(["2", "--unset"])
+
+        data = ClaudeAccountSwitcher()._get_sequence_data()
+        assert "icon" not in data["accounts"]["2"]
+
+    def test_list_icons(self, temp_home, capsys):
+        switcher = self._seeded_switcher_env(temp_home)
+        data = switcher._get_sequence_data()
+        data["accounts"]["2"]["icon"] = "💼"
+        switcher._write_json(switcher.sequence_file, data)
+
+        with patch("os.geteuid", return_value=1000, create=True):
+            cli._icon_command([])
+
+        assert "💼" in capsys.readouterr().out
+
+    def test_icon_does_not_disturb_the_alias(self, temp_home, capsys):
+        """Icon and alias are independent fields on the same record."""
+        switcher = self._seeded_switcher_env(temp_home)
+        data = switcher._get_sequence_data()
+        data["accounts"]["2"]["alias"] = "dev"
+        switcher._write_json(switcher.sequence_file, data)
+
+        with patch("os.geteuid", return_value=1000, create=True):
+            cli._icon_command(["2", "💼"])
+            cli._icon_command(["2", "--unset"])
+
+        data = ClaudeAccountSwitcher()._get_sequence_data()
+        assert data["accounts"]["2"]["alias"] == "dev"
+
+    def test_whitespace_icon_errors(self, temp_home, capsys):
+        self._seeded_switcher_env(temp_home)
+        with patch("os.geteuid", return_value=1000, create=True):
+            with pytest.raises(SystemExit):
+                cli._icon_command(["2", "a b"])
+
+    def test_missing_emoji_errors(self, temp_home, capsys):
+        self._seeded_switcher_env(temp_home)
+        with patch("os.geteuid", return_value=1000, create=True):
+            with pytest.raises(SystemExit):
+                cli._icon_command(["2"])
+
+    def test_unset_without_account_errors(self, temp_home, capsys):
+        self._seeded_switcher_env(temp_home)
+        with patch("os.geteuid", return_value=1000, create=True):
+            with pytest.raises(SystemExit):
+                cli._icon_command(["--unset"])
 
     def test_invalid_alias_errors(self, temp_home, capsys):
         self._seeded_switcher_env(temp_home)
