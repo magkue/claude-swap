@@ -79,7 +79,7 @@ class TestCLI:
         assert result.returncode == 0
         assert "Multi-Account Switcher" in result.stdout
         # Bare subcommands are the documented interface and lead the help.
-        assert "cswap add" in result.stdout or "add " in result.stdout
+        assert "ccswap add" in result.stdout or "add " in result.stdout
         assert "switch <num|email>" in result.stdout
         assert "list " in result.stdout
         assert "status " in result.stdout
@@ -433,7 +433,7 @@ class TestCLI:
             return 0
 
         monkeypatch.setattr(cli, "ClaudeAccountSwitcher", _FakeSwitcher)
-        monkeypatch.setattr(sys, "argv", ["cswap", "--menubar"])
+        monkeypatch.setattr(sys, "argv", ["ccswap", "--menubar"])
         monkeypatch.setattr(sys, "platform", "darwin")
         monkeypatch.setattr("claude_swap.menubar.run", _fake_run, raising=False)
         # geteuid only exists on POSIX; ensure non-root path
@@ -445,7 +445,7 @@ class TestCLI:
         assert called.get("ran") is True
 
     def test_menubar_subcommand_dispatches(self, monkeypatch):
-        """Bare `cswap menubar` should route exactly like `cswap --menubar`."""
+        """Bare `ccswap menubar` should route exactly like `ccswap --menubar`."""
         called = {}
 
         class _FakeSwitcher:
@@ -459,7 +459,7 @@ class TestCLI:
             return 0
 
         monkeypatch.setattr(cli, "ClaudeAccountSwitcher", _FakeSwitcher)
-        monkeypatch.setattr(sys, "argv", ["cswap", "menubar"])
+        monkeypatch.setattr(sys, "argv", ["ccswap", "menubar"])
         monkeypatch.setattr(sys, "platform", "darwin")
         monkeypatch.setattr("claude_swap.menubar.run", _fake_run, raising=False)
         monkeypatch.setattr(cli.os, "geteuid", lambda: 1000, raising=False)
@@ -563,7 +563,7 @@ class TestCLICommands:
 
 
 class TestRunCommand:
-    """`cswap run` pre-dispatch: parsing, forwarding, and dispatch."""
+    """`ccswap run` pre-dispatch: parsing, forwarding, and dispatch."""
 
     def _dispatch(self, argv: list[str]):
         """Run cli.main() with a fake SessionManager; returns recorded calls."""
@@ -608,7 +608,7 @@ class TestRunCommand:
         assert ("run", "2", ["--resume", "--model", "x"], True, False) in calls
 
     def test_tail_may_contain_run_flags(self):
-        """Args after `--` are NOT parsed by cswap, even if they look like ours."""
+        """Args after `--` are NOT parsed by ccswap, even if they look like ours."""
         calls = self._dispatch(["run", "2", "--", "--no-share"])
         assert ("run", "2", ["--no-share"], True, False) in calls
 
@@ -667,7 +667,7 @@ class TestRunCommand:
 
 
 class TestSubcommandAliases:
-    """Memorable subcommands (`cswap switch`, `cswap list`, ...) → classic flags."""
+    """Memorable subcommands (`ccswap switch`, `ccswap list`, ...) → classic flags."""
 
     def test_translate_is_noop_for_flags(self):
         """argv that already uses --flags is passed through untouched."""
@@ -710,7 +710,7 @@ class TestSubcommandAliases:
         assert cli._translate_subcommand(["bogus"]) == ["bogus"]
 
     def test_switch_subcommand_dispatches_switch_to(self):
-        """`cswap switch 2` reaches switch_to("2")."""
+        """`ccswap switch 2` reaches switch_to("2")."""
         with patch("claude_swap.cli.ClaudeAccountSwitcher") as switcher_cls, \
              patch.object(sys, "argv", ["claude-swap", "switch", "2"]), \
              patch("os.geteuid", return_value=1000, create=True), \
@@ -721,7 +721,7 @@ class TestSubcommandAliases:
         )
 
     def test_bare_switch_subcommand_dispatches_switch(self):
-        """`cswap switch` reaches switch() (rotate)."""
+        """`ccswap switch` reaches switch() (rotate)."""
         with patch("claude_swap.cli.ClaudeAccountSwitcher") as switcher_cls, \
              patch.object(sys, "argv", ["claude-swap", "switch"]), \
              patch("os.geteuid", return_value=1000, create=True), \
@@ -732,7 +732,7 @@ class TestSubcommandAliases:
         )
 
     def test_list_subcommand_with_json(self):
-        """`cswap list --json` reaches list_accounts(json_output=True)."""
+        """`ccswap list --json` reaches list_accounts(json_output=True)."""
         payload = {"schemaVersion": 1, "accounts": []}
         with patch("claude_swap.cli.ClaudeAccountSwitcher") as switcher_cls, \
              patch.object(sys, "argv", ["claude-swap", "list", "--json"]), \
@@ -745,7 +745,7 @@ class TestSubcommandAliases:
         )
 
     def test_run_subcommand_still_dispatches(self):
-        """`cswap run 2` keeps reaching the session pre-dispatch (not translated)."""
+        """`ccswap run 2` keeps reaching the session pre-dispatch (not translated)."""
         calls = []
 
         class FakeSessionManager:
@@ -763,7 +763,7 @@ class TestSubcommandAliases:
         assert calls == [("2", [], True)]
 
     def test_help_subcommand_prints_help(self):
-        """`cswap help` exits 0 and prints help (with subcommand docs)."""
+        """`ccswap help` exits 0 and prints help (with subcommand docs)."""
         result = subprocess.run(
             [sys.executable, "-m", "claude_swap", "help"],
             capture_output=True,
@@ -861,7 +861,7 @@ class TestJsonOutputCli:
 
 
 class TestAutoCommand:
-    """`cswap auto` pre-dispatch: parsing, settings merge, exit codes, JSONL."""
+    """`ccswap auto` pre-dispatch: parsing, settings merge, exit codes, JSONL."""
 
     class FakeEngine:
         instances: list = []
@@ -1047,7 +1047,7 @@ class TestUnclaimedCommand:
 
 
 class TestMapCommand:
-    """`cswap map` / `cswap unmap` directory-mapping commands."""
+    """`ccswap map` / `ccswap unmap` directory-mapping commands."""
 
     def _seeded_switcher_env(self, temp_home):
         """Build a real switcher with one managed account (slot 2)."""
@@ -1170,7 +1170,7 @@ class TestMapCommand:
         assert "No mapping for" in capsys.readouterr().out
 
     def test_map_dispatched_from_main(self, temp_home):
-        """`cswap map` routes through main() to _map_command."""
+        """`ccswap map` routes through main() to _map_command."""
         with patch("claude_swap.cli._map_command") as map_fn, \
              patch.object(sys, "argv", ["claude-swap", "map", "2", "/tmp/x"]):
             cli.main()
@@ -1204,7 +1204,7 @@ class TestMapCommand:
 
 
 class TestAliasCommand:
-    """`cswap alias` — set/unset/list a short display alias for an account."""
+    """`ccswap alias` — set/unset/list a short display alias for an account."""
 
     def _seeded_switcher_env(self, temp_home):
         switcher = ClaudeAccountSwitcher()
@@ -1270,7 +1270,7 @@ class TestAliasCommand:
                 cli._alias_command(["2"])
 
     def test_unset_without_account_errors(self, temp_home, capsys):
-        """`cswap alias --unset` with no target must error, not silently list."""
+        """`ccswap alias --unset` with no target must error, not silently list."""
         self._seeded_switcher_env(temp_home)
         with patch("os.geteuid", return_value=1000, create=True):
             with pytest.raises(SystemExit):
@@ -1335,7 +1335,7 @@ class TestAliasCommand:
 
 
 class TestRunAutoResolve:
-    """`cswap run` with no account resolves the cwd's directory mapping."""
+    """`ccswap run` with no account resolves the cwd's directory mapping."""
 
     def _fake_manager(self, calls):
         class FakeSessionManager:
@@ -1511,7 +1511,7 @@ class TestRunAutoResolve:
 
 
 class TestDisableEnableDispatch:
-    """`cswap disable`/`cswap enable` (and the legacy --disable-account /
+    """`ccswap disable`/`ccswap enable` (and the legacy --disable-account /
     --enable-account flags) forward to switcher.set_account_disabled."""
 
     def _run(self, argv):

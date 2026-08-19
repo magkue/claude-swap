@@ -1,10 +1,10 @@
-"""macOS menu bar app for claude-swap (``cswap --menubar``).
+"""macOS menu bar app for claude-swap (``ccswap --menubar``).
 
 A thin GUI shell over ``ClaudeAccountSwitcher`` and the core auto-switch engine
 (``claude_swap.autoswitch``) — it never re-implements account, usage, or
 auto-switch logic. Usage for display comes from ``switcher.accounts_snapshot()``
 (backed by the shared usage store); auto-switching, when enabled, runs the same
-``AutoSwitchEngine`` the CLI's ``cswap auto`` drives, sharing
+``AutoSwitchEngine`` the CLI's ``ccswap auto`` drives, sharing
 ``autoswitch_state.json`` and the ``autoswitch.*`` settings. The menu bar keeps
 only its own display preferences.
 
@@ -36,7 +36,7 @@ REFRESH_CHOICES: tuple[int, ...] = (30, 60, 300)
 AUTO_THRESHOLD_CHOICES: tuple[int, ...] = (80, 90, 95, 98)
 TITLE_PCT_CHOICES: tuple[str, ...] = ("off", "5h", "7d", "both")
 SWITCH_HISTORY_LIMIT = 10
-NOTIFICATION_BUNDLE_ID = "com.claude-swap.menubar"
+NOTIFICATION_BUNDLE_ID = "com.ccswap.menubar"
 
 
 def ensure_notification_identity(
@@ -67,7 +67,7 @@ def ensure_notification_identity(
             data["CFBundleIdentifier"] = NOTIFICATION_BUNDLE_ID
             changed = True
         if not data.get("CFBundleName"):
-            data["CFBundleName"] = "claude-swap"
+            data["CFBundleName"] = "ccswap"
             changed = True
         if changed or not path.exists():
             # atomic: an interrupted write must not leave a half-written plist
@@ -439,7 +439,7 @@ def _adapt_snapshot(snap) -> dict:
 
 
 def run(switcher) -> int:
-    """Entry point for ``cswap --menubar``. Blocks until the user quits."""
+    """Entry point for ``ccswap --menubar``. Blocks until the user quits."""
     ensure_notification_identity()
     try:
         import rumps  # lazy: optional dependency, imported only when launching
@@ -466,7 +466,10 @@ def run(switcher) -> int:
     from claude_swap.settings import load_settings, set_setting
     from claude_swap.snapshot_source import SnapshotSource
 
-    settings_path = switcher.backup_dir / "menubar_settings.json"
+    # Fork-owned display settings: the schema diverges from upstream's, so it
+    # gets its own file rather than fighting over ``menubar_settings.json`` in
+    # the backup dir this fork otherwise shares with an upstream install.
+    settings_path = switcher.backup_dir / "ccswap_menubar.json"
     log_path = switcher.backup_dir / "claude-swap.log"
 
     class MenuBarApp(rumps.App):
@@ -487,7 +490,7 @@ def run(switcher) -> int:
             self._config_path = switcher._get_claude_config_path()
             self._config_mtime = 0.0
             self._last_usage_log: dict = {}  # account num -> last-logged (5h, 7d) key
-            # Auto-switch engine (the same one `cswap auto` runs), hosted in a
+            # Auto-switch engine (the same one `ccswap auto` runs), hosted in a
             # background thread while enabled.
             self._engine = None
             self._engine_events: list = []
@@ -887,7 +890,7 @@ def run(switcher) -> int:
                     title="claude-swap",
                     message="Couldn't read the active credential. If the menu bar is running "
                             "as a background/login agent, macOS blocks its Keychain access — "
-                            "quit and relaunch it from a Terminal with: cswap --menubar",
+                            "quit and relaunch it from a Terminal with: ccswap --menubar",
                 )
                 return
             except ClaudeSwitchError as e:
