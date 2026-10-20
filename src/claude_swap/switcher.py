@@ -209,7 +209,7 @@ SENTINEL_NOTES = {
     USAGE_FOREIGN_CREDENTIAL: "live credential belongs to another account — a switch repairs it",
     USAGE_API_KEY: "API key (no quota)",
     USAGE_KEYCHAIN_UNAVAILABLE: "keychain unavailable — locked or in use; try again",
-    USAGE_RELOGIN_REQUIRED: "re-login needed — refresh token dead; log in with Claude Code, then run: ccswap add",
+    USAGE_RELOGIN_REQUIRED: "re-login needed — refresh token dead; run: ccswap login <num>",
 }
 
 
@@ -4050,6 +4050,76 @@ class ClaudeAccountSwitcher:
         if migrate_from:
             print(f"{dimmed(f'Moved from slot {migrate_from} → {slot}')}")
         print(f"{accent('Added')} Account {account_num}: {current_email} {muted(f'[{tag}]')}")
+
+    def store_external_login(
+        self,
+        account_num: str,
+        creds: str,
+        identity: tuple[str, str] | None,
+    ) -> None:
+        """Replace a non-active slot's backup with a login made elsewhere.
+
+        The write half of ``ccswap login``: claude ran ``auth login`` against a
+        throwaway config dir, and ``creds``/``identity`` are what it left there.
+        Mirrors ``add_account``'s in-place refresh, minus the two things that
+        only make sense when the captured login IS the default one: the slot's
+        config backup is kept (``.claude.json`` of a throwaway dir is not the
+        account's config), and ``activeAccountNumber`` is left alone.
+
+        Raises:
+            AccountNotFoundError: the slot does not exist.
+            ConfigError: the login is another account's, or the slot is active.
+            ValidationError: the login produced an API key.
+        """
+        self._refuse_session_shell()
+        data = self._get_sequence_data() or {}
+        record = data.get("accounts", {}).get(account_num)
+        if not record:
+            raise AccountNotFoundError(f"Account-{account_num} does not exist")
+        email = record.get("email", "")
+        org_uuid = record.get("organizationUuid", "") or ""
+
+        if self._get_current_account() == (email, org_uuid):
+            # The live store holds this account: a backup-only write would
+            # leave the default login on the old generation.
+            raise ConfigError(
+                f"Account-{account_num} ({email}) is the active default login; "
+                "log in on the default profile and run `ccswap add` instead."
+            )
+        if identity is None:
+            raise ConfigError(
+                "The login left no readable identity (.claude.json); nothing "
+                "was changed."
+            )
+        seen_email, seen_org = identity
+        if seen_email.lower() != email.lower() or seen_org != org_uuid:
+            raise ConfigError(
+                f"Logged in as {seen_email}, but Account-{account_num} is "
+                f"{email}; nothing was changed. Log in with {email}."
+            )
+        if looks_like_api_key(creds):
+            raise ValidationError(
+                "The login produced an API key, not a subscription login; "
+                "register it with 'ccswap add-token' instead."
+            )
+        # Same ownership oracle as `add`: the identity file and the token come
+        # from two different stores, and only the token decides whose it is.
+        creds = self._reject_foreign_credential_capture(
+            creds, email, org_uuid, record.get("uuid", "") or ""
+        )
+
+        self._write_account_credentials(account_num, email, creds)
+        self._usage_store.clear_dead_token(
+            [account_num], {account_num: (email, org_uuid)}
+        )
+        self._logger.info(f"Re-logged in account {account_num}: {email}")
+        tag = self._get_display_tag(
+            email, record.get("organizationName", ""), org_uuid
+        )
+        print(
+            f"{accent('Updated credentials')} for Account {account_num} "
+            f"({email} {muted(f'[{tag}]')})."
+        )
 
     def add_account_from_token(
         self,

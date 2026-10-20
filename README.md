@@ -20,6 +20,11 @@
 >   SECONDS, refetching only what is staler. A hint, not a guarantee: a failed
 >   fetch still serves the last-good measurement, and rate-limit backoff is
 >   never bypassed. Read `usageAgeSeconds` to know what you actually got.
+> - **`ccswap login <num|email>`** — renew an account that shows *re-login
+>   needed*. For any account but the active one, `claude auth login` runs in a
+>   throwaway profile and the result is stored into that slot, so the default
+>   login and every running Claude session stay as they are (upstream's
+>   `/login` + `cswap add --slot N` swaps the default login over first).
 >
 > Install from a checkout with `uv tool install --editable . --with rumps`.
 

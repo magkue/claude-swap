@@ -232,6 +232,49 @@ Examples:
         sys.exit(130)
 
 
+def _login_command(argv: list[str]) -> None:
+    """Handle `ccswap login NUM|EMAIL` — renew one account's stored login.
+
+    Pre-dispatched before the main parser for the same reason as `run`.
+    """
+    parser = argparse.ArgumentParser(
+        prog=f"{_prog_name()} login",
+        description=(
+            "Log a stored account in again (e.g. after 're-login needed'). "
+            "For any account but the active one, the login runs in a "
+            "throwaway profile, so the default login and running Claude "
+            "sessions are unaffected."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  ccswap login 2
+  ccswap login user@example.com
+        """,
+    )
+    parser.add_argument(
+        "account",
+        metavar="NUM|EMAIL",
+        help="Account to log in (number, email, or alias).",
+    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    args = parser.parse_args(argv)
+
+    try:
+        switcher = ClaudeAccountSwitcher(debug=args.debug)
+        _guard_root(switcher)
+
+        from claude_swap.session import SessionManager
+
+        SessionManager(switcher).login(args.account)
+    except ClaudeSwitchError as e:
+        error(f"Error: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print(f"\n{dimmed('Operation cancelled')}")
+        sys.exit(130)
+
+
 def _guard_root(switcher: ClaudeAccountSwitcher) -> None:
     """Refuse to run as root outside a container (shared by run/map/unmap)."""
     if sys.platform != "win32":
@@ -1212,6 +1255,9 @@ def main() -> None:
     if argv and argv[0] == "run":
         _run_command(argv[1:])
         return  # only reachable in tests where exec/exit is mocked
+    if argv and argv[0] == "login":
+        _login_command(argv[1:])
+        return
     if argv and argv[0] == "auto":
         _auto_command(argv[1:])
         return  # only reachable in tests where sys.exit is mocked
@@ -1267,6 +1313,7 @@ Commands:
   %(prog)s switch <num|email>         switch to a specific account
   %(prog)s add                        add the current account
   %(prog)s add-token [TOKEN|-]        register a setup-token or API key
+  %(prog)s login <num|email>          log an account in again (re-login)
   %(prog)s remove <num|email>         remove an account
   %(prog)s disable <num|email>        hold an account out of auto-rotation
   %(prog)s enable <num|email>         return a disabled account to rotation

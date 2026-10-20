@@ -19,6 +19,7 @@ from claude_swap import session as session_mod
 from claude_swap.credentials import CLAUDE_CODE_MANAGED_KEYCHAIN_SERVICE
 from claude_swap.exceptions import (
     AccountNotFoundError,
+    ConfigError,
     CredentialReadError,
     SessionError,
     SwitchError,
@@ -1424,6 +1425,154 @@ class TestRun:
         monkeypatch.setattr(session_mod.shutil, "which", lambda name: None)
         with pytest.raises(SessionError, match="not found on PATH"):
             manager.exec_default([])
+
+
+LOGIN_CREDS = json.dumps(
+    {
+        "claudeAiOauth": {
+            "accessToken": "login-access",
+            "refreshToken": "login-refresh",
+            "expiresAt": 9999999999999,
+        }
+    }
+)
+
+
+@pytest.fixture
+def fake_login(monkeypatch, tmp_path):
+    """Fake `claude auth login`: records each call and, like the real one,
+    leaves an identity and a keychain credential in the profile it ran in."""
+    calls: list[tuple[list[str], dict]] = []
+    outcome = {"rc": 0, "email": ACCOUNT_EMAIL, "org": ORG_UUID}
+
+    def fake_run(argv, env=None, **kwargs):
+        calls.append((argv, env))
+        config_dir = env.get("CLAUDE_CONFIG_DIR")
+        if outcome["rc"] == 0 and config_dir:
+            (Path(config_dir) / ".claude.json").write_text(
+                json.dumps(
+                    {
+                        "oauthAccount": {
+                            "emailAddress": outcome["email"],
+                            "organizationUuid": outcome["org"],
+                        }
+                    }
+                )
+            )
+            macos_keychain.set_password(
+                keychain_service_name(config_dir),
+                macos_keychain.keychain_account_name(),
+                LOGIN_CREDS,
+            )
+        return SimpleNamespace(returncode=outcome["rc"])
+
+    monkeypatch.setattr(session_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(session_mod.shutil, "which", lambda name: f"/fake/bin/{name}")
+    monkeypatch.setattr(session_mod.tempfile, "tempdir", str(tmp_path))
+    return SimpleNamespace(calls=calls, outcome=outcome)
+
+
+class TestLogin:
+    """`ccswap login`: renew a stored login without touching the default one."""
+
+    @staticmethod
+    def _backup(manager) -> str:
+        return manager.switcher._read_account_credentials(ACCOUNT_NUM, ACCOUNT_EMAIL)
+
+    @staticmethod
+    def _login_dir(fake_login) -> str:
+        return fake_login.calls[-1][1]["CLAUDE_CONFIG_DIR"]
+
+    def test_stores_the_login_into_the_slot(self, manager, fake_login):
+        manager.login("2")
+
+        argv, _env = fake_login.calls[-1]
+        assert argv == ["/fake/bin/claude", "auth", "login", "--email", ACCOUNT_EMAIL]
+        assert self._backup(manager) == LOGIN_CREDS
+
+    def test_default_login_and_config_backup_are_untouched(self, manager, fake_login):
+        manager.login("2")
+
+        assert manager.switcher._get_sequence_data()["activeAccountNumber"] == 1
+        assert manager.switcher._read_account_config(ACCOUNT_NUM, ACCOUNT_EMAIL) == CONFIG
+
+    def test_auth_overrides_are_scrubbed(self, manager, fake_login, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-override")
+        manager.login("2")
+
+        assert "ANTHROPIC_API_KEY" not in fake_login.calls[-1][1]
+
+    def test_throwaway_profile_and_its_keychain_entry_are_removed(
+        self, manager, fake_login
+    ):
+        manager.login("2")
+
+        login_dir = self._login_dir(fake_login)
+        assert not Path(login_dir).exists()
+        assert not macos_keychain.item_exists(
+            keychain_service_name(login_dir), macos_keychain.keychain_account_name()
+        )
+
+    def test_dead_token_strike_is_cleared(self, manager, fake_login, monkeypatch):
+        cleared = []
+        monkeypatch.setattr(
+            manager.switcher._usage_store,
+            "clear_dead_token",
+            lambda nums, identities: cleared.append(nums),
+        )
+        manager.login("2")
+
+        assert cleared == [[ACCOUNT_NUM]]
+
+    def test_login_as_another_account_changes_nothing(self, manager, fake_login):
+        fake_login.outcome["email"] = "someone@else.com"
+        with pytest.raises(ConfigError, match="Logged in as someone@else.com"):
+            manager.login("2")
+
+        assert self._backup(manager) == CREDS
+        assert not Path(self._login_dir(fake_login)).exists()
+
+    def test_failed_login_changes_nothing(self, manager, fake_login):
+        fake_login.outcome["rc"] = 1
+        with pytest.raises(SessionError, match="exited with status 1"):
+            manager.login("2")
+
+        assert self._backup(manager) == CREDS
+        assert not Path(self._login_dir(fake_login)).exists()
+
+    def test_api_key_account_is_refused(self, manager, fake_login, monkeypatch):
+        monkeypatch.setattr(manager.switcher, "_account_kind", lambda num: "api_key")
+        with pytest.raises(SessionError, match="API-key account"):
+            manager.login("2")
+
+        assert fake_login.calls == []
+
+    def test_active_account_logs_in_on_the_default_profile(
+        self, manager, fake_login, monkeypatch
+    ):
+        monkeypatch.setattr(
+            manager.switcher, "_get_current_account", lambda: (ACCOUNT_EMAIL, ORG_UUID)
+        )
+        added = []
+        monkeypatch.setattr(manager.switcher, "add_account", lambda: added.append(True))
+        manager.login("2")
+
+        assert "CLAUDE_CONFIG_DIR" not in fake_login.calls[-1][1]
+        assert added == [True]
+
+    def test_active_account_landing_on_another_login_stores_nothing(
+        self, manager, fake_login, monkeypatch
+    ):
+        identities = iter([(ACCOUNT_EMAIL, ORG_UUID), ("someone@else.com", "org-x")])
+        monkeypatch.setattr(
+            manager.switcher, "_get_current_account", lambda: next(identities)
+        )
+        added = []
+        monkeypatch.setattr(manager.switcher, "add_account", lambda: added.append(True))
+        with pytest.raises(SessionError, match="default login is now someone@else.com"):
+            manager.login("2")
+
+        assert added == []
 
 
 class TestExec:

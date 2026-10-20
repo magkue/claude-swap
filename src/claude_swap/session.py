@@ -42,6 +42,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
 from pathlib import Path
@@ -660,6 +661,84 @@ class SessionManager:
                 "'claude' was not found on PATH. Install Claude Code first."
             )
         self._exec(claude_bin, claude_args, env=dict(os.environ))
+
+    # -- login -----------------------------------------------------------
+
+    def login(self, identifier: str) -> None:
+        """Re-login a stored account (``ccswap login``).
+
+        The documented recovery for a dead refresh token is ``/login`` plus
+        ``ccswap add --slot N``, which goes through the DEFAULT login: every
+        running claude on the default profile flips to that account until the
+        user switches back. For a non-active account that detour is avoidable.
+        ``claude auth login`` runs against a throwaway config dir instead, and
+        what it leaves there is stored into the slot's backup. The throwaway
+        dir and its hashed keychain entry are removed whatever happens.
+
+        The active account's broken login IS the default login, so there it
+        logs in on the default profile and refreshes the slot the way ``add``
+        does.
+        """
+        claude_bin = shutil.which("claude")
+        if not claude_bin:
+            raise SessionError(
+                "'claude' was not found on PATH. Install Claude Code first."
+            )
+        self.switcher._refuse_session_shell()
+        account_num, email, org_uuid = self.switcher.resolve_account(identifier)
+        if self.switcher._account_kind(account_num) == "api_key":
+            raise SessionError(
+                f"Account-{account_num} ({email}) is an API-key account; there "
+                "is no login to renew. Replace the key with 'ccswap add-token'."
+            )
+
+        argv = [claude_bin, "auth", "login", "--email", email]
+        env = {
+            k: v for k, v in os.environ.items() if k not in AUTH_OVERRIDE_ENV_VARS
+        }
+
+        if self.switcher._get_current_account() == (email, org_uuid):
+            print(
+                f"{accent('Logging in')} Account-{account_num} ({email}) "
+                f"{muted('[active default login]')}"
+            )
+            self._run_login(argv, env)
+            current = self.switcher._get_current_account()
+            if current != (email, org_uuid):
+                shown = current[0] if current else "no account"
+                raise SessionError(
+                    f"The default login is now {shown}, not {email}; nothing "
+                    f"was stored for Account-{account_num}. Run `ccswap add` to "
+                    f"register it, or `ccswap switch {account_num}` to go back."
+                )
+            self.switcher.add_account()
+            return
+
+        print(
+            f"{accent('Logging in')} Account-{account_num} ({email}) "
+            f"{muted('[default login unaffected]')}"
+        )
+        login_dir = tempfile.mkdtemp(prefix="ccswap-login-")
+        try:
+            self._run_login(argv, {**env, "CLAUDE_CONFIG_DIR": login_dir})
+            creds = read_config_dir_credentials(login_dir, strict_keychain=True)
+            if not creds:
+                raise SessionError("The login left no credential; nothing was changed.")
+            self.switcher.store_external_login(
+                account_num, creds, read_session_identity(Path(login_dir))
+            )
+        finally:
+            # Keychain first: its service name is derived from the dir path.
+            delete_macos_keychain_entry(Path(login_dir))
+            shutil.rmtree(login_dir, ignore_errors=True)
+
+    def _run_login(self, argv: list[str], env: dict[str, str]) -> None:
+        """Run ``claude auth login`` in this terminal; raise unless it succeeded."""
+        rc = subprocess.run(argv, env=env).returncode
+        if rc != 0:
+            raise SessionError(
+                f"'claude auth login' exited with status {rc}; nothing was changed."
+            )
 
     def _exec(self, claude_bin: str, claude_args: list[str], env: dict[str, str]) -> NoReturn:
         """Hand the terminal over to claude. Never returns.

@@ -749,6 +749,35 @@ class TestCLICommands:
         assert "--email" in result.stdout  # modifier flag stays visible
 
 
+class TestLoginCommand:
+    """`ccswap login` pre-dispatch hands the account to SessionManager.login."""
+
+    def _dispatch(self, argv: list[str]):
+        calls = []
+
+        class FakeSessionManager:
+            def __init__(self, switcher):
+                pass
+
+            def login(self, identifier):
+                calls.append(identifier)
+
+        with patch("claude_swap.session.SessionManager", FakeSessionManager), \
+             patch("claude_swap.cli.ClaudeAccountSwitcher"), \
+             patch("os.geteuid", return_value=1000, create=True), \
+             patch.object(sys, "argv", ["ccswap", *argv]):
+            cli.main()
+        return calls
+
+    def test_dispatches_the_account(self):
+        assert self._dispatch(["login", "2"]) == ["2"]
+
+    def test_account_is_required(self):
+        with pytest.raises(SystemExit) as exc:
+            self._dispatch(["login"])
+        assert exc.value.code == 2
+
+
 class TestRunCommand:
     """`ccswap run` pre-dispatch: parsing, forwarding, and dispatch."""
 
