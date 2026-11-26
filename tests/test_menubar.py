@@ -33,8 +33,8 @@ def test_notification_identity_creates_and_preserves_info_plist(tmp_path: Path):
 
     assert result == info
     data = plistlib.loads(info.read_bytes())
-    assert data["CFBundleIdentifier"] == "com.ccswap.menubar"
-    assert data["CFBundleName"] == "ccswap"
+    assert data["CFBundleIdentifier"] == "com.claude-swap.menubar"
+    assert data["CFBundleName"] == "claude-swap"
     assert data["ExistingKey"] == "kept"
 
 
@@ -52,8 +52,8 @@ def test_notification_identity_heals_corrupt_info_plist(tmp_path: Path):
 
     assert result == info
     data = plistlib.loads(info.read_bytes())
-    assert data["CFBundleIdentifier"] == "com.ccswap.menubar"
-    assert data["CFBundleName"] == "ccswap"
+    assert data["CFBundleIdentifier"] == "com.claude-swap.menubar"
+    assert data["CFBundleName"] == "claude-swap"
     assert not (executable.parent / "Info.plist.tmp").exists()
 
 

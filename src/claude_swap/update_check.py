@@ -121,14 +121,14 @@ def check_for_update(current_version: str) -> str | None:
                 "pipx": "pipx upgrade claude-swap",
             }.get(method or "")
             if direct and sys.platform != "win32":
-                # ccswap upgrade actually performs the upgrade here.
-                hint = "Run `ccswap upgrade` to update."
+                # cswap upgrade actually performs the upgrade here.
+                hint = "Run `cswap upgrade` to update."
             elif direct:
-                # Windows: ccswap upgrade only prints, so point at the real command.
+                # Windows: cswap upgrade only prints, so point at the real command.
                 hint = f"Run `{direct}` to update."
             else:
-                # Unknown install method: ccswap upgrade shows manual instructions.
-                hint = "Run `ccswap upgrade` for upgrade instructions."
+                # Unknown install method: cswap upgrade shows manual instructions.
+                hint = "Run `cswap upgrade` for upgrade instructions."
             return (
                 f"A newer version of claude-swap is available ({latest_version}). "
                 f"You are using {current_version}. {hint}"
@@ -167,7 +167,7 @@ def run_self_upgrade() -> int:
 
     # Windows: the running cswap.exe launcher is locked, so an in-process
     # uv/pipx upgrade fails when it tries to replace the executable even
-    # though the package itself updates. ccswap exits right after this, which
+    # though the package itself updates. cswap exits right after this, which
     # releases the lock, so the user can just run the command themselves.
     if sys.platform == "win32":
         print(f"To upgrade claude-swap on Windows, run:\n  {accent(' '.join(cmd))}")

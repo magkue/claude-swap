@@ -1,16 +1,13 @@
-# ccswap
+# claude-swap
 
-> **A fork of [realiti4/claude-swap](https://github.com/realiti4/claude-swap).**
->
-> It installs as `ccswap` and deliberately does **not** ship upstream's `cswap`
-> / `claude-swap` entry points, so it can live alongside an upstream install
-> without shadowing it. Both share `~/.claude-swap-backup` — the same accounts,
-> the same lease-coordinated usage store, the same auto-switch state — so the
-> two stay consistent instead of double-polling your rate limits.
+> **A fork of [realiti4/claude-swap](https://github.com/realiti4/claude-swap)**
+> that adds what the companion Raycast extension needs. It installs the same
+> `cswap` and `claude-swap` commands as upstream, plus `ccswap` as an alias,
+> so it replaces an upstream install rather than living next to one.
 >
 > **What the fork adds**
 >
-> - `ccswap icon <num|email> <emoji>` — a per-account display icon (`💼`, `🏠`)
+> - `cswap icon <num|email> <emoji>` — a per-account display icon (`💼`, `🏠`)
 >   shown in the menu bar and consumed by the Raycast extension. Decoration
 >   only: unlike an alias it is never accepted as an account identifier.
 > - `list --json` now carries per-account **`sessions`**: the live Claude Code
@@ -20,13 +17,16 @@
 >   SECONDS, refetching only what is staler. A hint, not a guarantee: a failed
 >   fetch still serves the last-good measurement, and rate-limit backoff is
 >   never bypassed. Read `usageAgeSeconds` to know what you actually got.
-> - **`ccswap login <num|email>`** — renew an account that shows *re-login
+> - **`cswap login <num|email>`** — renew an account that shows *re-login
 >   needed*. For any account but the active one, `claude auth login` runs in a
 >   throwaway profile and the result is stored into that slot, so the default
 >   login and every running Claude session stay as they are (upstream's
 >   `/login` + `cswap add --slot N` swaps the default login over first).
+> - `map --json` — the directory mappings as JSON.
 >
-> Install from a checkout with `uv tool install --editable . --with rumps`.
+> Install with
+> `uv tool install "claude-swap @ git+https://github.com/magkue/claude-swap@ccswap" --with rumps`,
+> or from a checkout with `uv tool install --editable . --with rumps`.
 
 Multi-account switcher for Claude Code. Easily switch between multiple Claude accounts without logging out, or let it switch for you before you hit a rate limit. Track usage for every account in a live dashboard, and run accounts in parallel. Works with both the Claude Code CLI and the VS Code extension.
 

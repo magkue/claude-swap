@@ -2,7 +2,7 @@
 
 Moves the OAuth credentials and config across machines via a portable
 JSON envelope. No encryption is built in — users compose their own
-(e.g. `ccswap --export - | gpg -c > out.gpg`).
+(e.g. `cswap --export - | gpg -c > out.gpg`).
 """
 
 from __future__ import annotations
@@ -177,7 +177,7 @@ def export_accounts(
     """
     sequence_data = switcher._get_sequence_data_migrated()
     if not sequence_data or not sequence_data.get("accounts"):
-        raise TransferError("no accounts to export — run ccswap --add-account first")
+        raise TransferError("no accounts to export — run cswap --add-account first")
 
     accounts_map = sequence_data["accounts"]
 
@@ -234,7 +234,7 @@ def export_accounts(
                 _eprint(
                     f"Skipping Account-{num} ({email}): no stored "
                     f"credentials/config — re-add with: "
-                    f"ccswap --add-account --slot {num}"
+                    f"cswap --add-account --slot {num}"
                 )
                 continue
 
@@ -271,7 +271,7 @@ def export_accounts(
     if not accounts_payload:
         raise TransferError(
             "no exportable accounts — all managed slots are missing stored "
-            "credentials/config. Re-add with: ccswap --add-account --slot <number>"
+            "credentials/config. Re-add with: cswap --add-account --slot <number>"
         )
 
     # Only carry activeAccountNumber if that slot is actually present in the
@@ -349,7 +349,7 @@ def import_accounts(
     if envelope.get("encrypted") is True:
         raise TransferError(
             "encrypted exports are not supported in this version — "
-            "decrypt before piping (e.g. gpg -d backup.gpg | ccswap --import -)"
+            "decrypt before piping (e.g. gpg -d backup.gpg | cswap --import -)"
         )
 
     accounts = envelope.get("accounts")
@@ -511,7 +511,7 @@ def import_accounts(
             target_num = existing_slot
             # The credential write below invalidates the slot's non-live
             # session profile (chokepoint in _write_account_credentials), so
-            # the next `ccswap run` re-bootstraps from the imported creds. A
+            # the next `cswap run` re-bootstraps from the imported creds. A
             # live session keeps running on its own copy — warn about it.
             live_pids = switcher._live_session_pids(target_num, entry["email"])
             if live_pids:
@@ -519,7 +519,7 @@ def import_accounts(
                     f"Warning: {entry['email']} (slot {target_num}) has a live "
                     f"session-mode instance (PID {', '.join(map(str, live_pids))}); "
                     "its session profile keeps the pre-import credentials until "
-                    "it is restarted via 'ccswap run'."
+                    "it is restarted via 'cswap run'."
                 )
         else:
             if entry["exported_num"] not in data.get("accounts", {}):
@@ -616,7 +616,7 @@ def import_accounts(
         switcher._write_json(switcher.sequence_file, final)
 
     # "replaced" gets its own count — the user must be able to distinguish
-    # "I forced this" from "ccswap healed this". Appended only when it
+    # "I forced this" from "cswap healed this". Appended only when it
     # happened, keeping the common-case summary stable.
     summary = (
         f"Done: {imported} imported, {overwritten} overwritten, {skipped} skipped"
@@ -635,7 +635,7 @@ def import_accounts(
         if live_slot is not None and live_slot in written_slots:
             _eprint(
                 f"Note: {identity[0]} is your current live login — activate the "
-                f"imported credentials with: ccswap --switch-to {live_slot} --force"
+                f"imported credentials with: cswap --switch-to {live_slot} --force"
             )
 
 
@@ -644,7 +644,7 @@ def import_usage(
     source: str,
     hold_s: float | None = None,
 ) -> None:
-    """Adopt usage readings another machine took, from its ``ccswap list --json``.
+    """Adopt usage readings another machine took, from its ``cswap list --json``.
 
     For machines that hold the same accounts: when they share a login (moved
     with ``export``/``import``) or the account is budgeted per account rather
@@ -681,7 +681,7 @@ def import_usage(
     if version != JSON_SCHEMA_VERSION:
         raise TransferError(
             f"unsupported usage document schemaVersion: {version!r} "
-            f"(expected {JSON_SCHEMA_VERSION}, as printed by 'ccswap list --json')"
+            f"(expected {JSON_SCHEMA_VERSION}, as printed by 'cswap list --json')"
         )
     rows = document.get("accounts")
     if not isinstance(rows, list):

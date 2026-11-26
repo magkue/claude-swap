@@ -768,7 +768,7 @@ class TestAccountRowIconAndSessions:
 
     def test_sessions_absent_when_empty(self):
         """An account with nothing running carries no key at all, so a
-        consumer cannot tell "idle" apart from an older ccswap by shape."""
+        consumer cannot tell "idle" apart from an older cswap by shape."""
         row = account_row(1, "a@example.com", "", "", False, None, sessions=[])
         assert "sessions" not in row
 

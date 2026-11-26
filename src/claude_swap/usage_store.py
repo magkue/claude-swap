@@ -6,7 +6,7 @@ treated as empty — its data had a 15s shelf life anyway). One failed round
 trip no longer blanks every account: a failure updates the error/backoff
 fields and never touches the last-good measurement (stale-on-error). The
 table is shared by ``--list``/``--status`` (on-demand refresh of stale
-entries) and ``ccswap auto`` (scheduled polling), so each learns from the
+entries) and ``cswap auto`` (scheduled polling), so each learns from the
 other's fetches.
 
 The store persists only *measurements* (``lastGood``) and *fetch state*
@@ -122,7 +122,7 @@ BACKOFF_MAX_SHIFT = 32
 # poll_policy documents the measured shape — an hour-scale window, exact edge
 # algorithm undocumented). Nothing below depends on whether the budget is
 # scoped to the account/org or to the token — the wait comes from the
-# server's own deadline either way. Cumulative polling from ccswap's own
+# server's own deadline either way. Cumulative polling from cswap's own
 # surfaces is what saturates it.
 # Retry-After tells the rules apart:
 # - "Retry-After: 0" = the saturated-budget edge: the trailing hour's budget
@@ -310,7 +310,7 @@ class UsageEntry:
     # Appended to preserve positional compatibility for the older read-model
     # fields while exposing whether a fetch lease is currently live.
     claim_until: float | None = None
-    # Until when a reading adopted from another machine (``ccswap
+    # Until when a reading adopted from another machine (``cswap
     # import-usage``) keeps every collector off this slot. Appended for the
     # same positional compatibility as ``claim_until``.
     held_until: float | None = None
@@ -1296,7 +1296,7 @@ def _row_eligible(
     (see :meth:`UsageStore.reserve` for the two caller modes).
 
     ``serve_ttl`` overrides ``SERVE_TTL_S`` for the staleness test only — the
-    freshness bar a caller is willing to accept (``ccswap ... --max-age``). A
+    freshness bar a caller is willing to accept (``cswap ... --max-age``). A
     *lower* bar additionally waives the poll-plan gate, because the plan is a
     cadence optimization rather than a safety mechanism and honoring it would
     make a tightened bar unreachable. The actual rate-limit protections are

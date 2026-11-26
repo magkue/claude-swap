@@ -1,10 +1,7 @@
 [project]
-# Fork of claude-swap. The distribution is renamed so it installs as its own
-# uv/pipx tool alongside upstream rather than replacing it; the import package
-# stays ``claude_swap`` so merges from upstream keep applying cleanly.
-name = "ccswap"
+name = "claude-swap"
 version = "0.28.0b1"
-description = "Multi-account switcher for Claude Code (ccswap fork)"
+description = "Multi-account switcher for Claude Code"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -43,9 +40,10 @@ Repository = "https://github.com/magkue/claude-swap"
 Upstream = "https://github.com/realiti4/claude-swap"
 
 [project.scripts]
-# Only ``ccswap``: upstream's ``cswap``/``claude-swap`` entry points are
-# deliberately not shipped so installing this fork can never shadow a working
-# upstream install on the same PATH.
+claude-swap = "claude_swap.cli:main"
+cswap = "claude_swap.cli:main"
+# Fork-only alias: the Raycast extension and the fish `claude` wrapper call
+# `ccswap`, the name this fork used to ship under.
 ccswap = "claude_swap.cli:main"
 
 [build-system]

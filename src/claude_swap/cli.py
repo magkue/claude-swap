@@ -30,9 +30,9 @@ def _prog_name() -> str:
 
     argparse otherwise defaults to ``os.path.basename(sys.argv[0])``, which for
     an installed entry-point shim renders as an ugly absolute path (e.g.
-    ``python.exe C:\\Users\\me\\.local\\bin\\ccswap``). We strip that down to the
-    bare command the user typed (``ccswap`` / ``claude-swap``), falling back to
-    ``ccswap`` for ``python -m claude_swap`` and odd launchers.
+    ``python.exe C:\\Users\\me\\.local\\bin\\cswap``). We strip that down to the
+    bare command the user typed (``cswap`` / ``claude-swap``), falling back to
+    ``cswap`` for ``python -m claude_swap`` and odd launchers.
     """
     name = os.path.basename(sys.argv[0] or "")
     for ext in (".exe", ".pyw", ".py"):
@@ -40,12 +40,12 @@ def _prog_name() -> str:
             name = name[: -len(ext)]
             break
     if not name or name in {"__main__", "python", "python3", "py"}:
-        return "ccswap"
+        return "cswap"
     return name
 
 
 # Memorable subcommand aliases → the long-standing flags they expand to. Lets
-# users type `ccswap list`, `ccswap status`, `ccswap add`, etc. instead of `--list`
+# users type `cswap list`, `cswap status`, `cswap add`, etc. instead of `--list`
 # / `--status` / `--add-account`, which all still work. `switch` is special-cased
 # below (a bare `switch` rotates; `switch <target>` jumps to one account) and
 # `run`/`auto` keep their own pre-dispatch parsers, so none of those are listed here.
@@ -80,7 +80,7 @@ def _translate_subcommand(argv: list[str]) -> list[str]:
     established ``--flag`` interface — and every existing test that drives it —
     is left untouched. Tokens after the verb pass through verbatim, so flags
     like ``--json``, ``--strategy``, ``--slot``, and ``--force`` keep combining
-    exactly as before (e.g. ``ccswap switch --strategy best``, ``ccswap list --json``).
+    exactly as before (e.g. ``cswap switch --strategy best``, ``cswap list --json``).
     """
     if not argv:
         return argv
@@ -101,13 +101,13 @@ def _translate_subcommand(argv: list[str]) -> list[str]:
 
 
 def _run_command(argv: list[str]) -> None:
-    """Handle `ccswap run NUM|EMAIL [--no-share] [-- <claude args>]`.
+    """Handle `cswap run NUM|EMAIL [--no-share] [-- <claude args>]`.
 
     Pre-dispatched before the main parser is built: a positional subcommand
     can't coexist with main()'s mutually-exclusive flag group, and this keeps
     the existing parser untouched. Limitation: `run` must be the
-    first argument (`ccswap --debug run 2` is not supported; use
-    `ccswap run 2 --debug`).
+    first argument (`cswap --debug run 2` is not supported; use
+    `cswap run 2 --debug`).
 
     On POSIX this execs claude and never returns; on Windows it exits with
     claude's return code. Either way the post-dispatch update check in
@@ -130,12 +130,12 @@ def _run_command(argv: list[str]) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ccswap run 2
-  ccswap run user@example.com
-  ccswap run 2 --no-share
-  ccswap run 2 --share-history
-  ccswap run 2 --require-session
-  ccswap run 2 -- --resume
+  cswap run 2
+  cswap run user@example.com
+  cswap run 2 --no-share
+  cswap run 2 --share-history
+  cswap run 2 --require-session
+  cswap run 2 -- --resume
         """,
     )
     parser.add_argument(
@@ -143,7 +143,7 @@ Examples:
         nargs="?",
         metavar="NUM|EMAIL",
         help="Account to run (number or email). Omit to use the current "
-        "directory's mapping (see `ccswap map`).",
+        "directory's mapping (see `cswap map`).",
     )
     parser.add_argument(
         "--no-share",
@@ -233,7 +233,7 @@ Examples:
 
 
 def _login_command(argv: list[str]) -> None:
-    """Handle `ccswap login NUM|EMAIL` — renew one account's stored login.
+    """Handle `cswap login NUM|EMAIL` — renew one account's stored login.
 
     Pre-dispatched before the main parser for the same reason as `run`.
     """
@@ -248,8 +248,8 @@ def _login_command(argv: list[str]) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ccswap login 2
-  ccswap login user@example.com
+  cswap login 2
+  cswap login user@example.com
         """,
     )
     parser.add_argument(
@@ -284,7 +284,7 @@ def _guard_root(switcher: ClaudeAccountSwitcher) -> None:
 
 
 def _map_command(argv: list[str]) -> None:
-    """Handle `ccswap map [NUM|EMAIL] [PATH]`.
+    """Handle `cswap map [NUM|EMAIL] [PATH]`.
 
     With no NUM|EMAIL, lists all mappings. Otherwise maps PATH (default: the
     current directory) to the given account. Pre-dispatched before the main
@@ -292,18 +292,18 @@ def _map_command(argv: list[str]) -> None:
     mutually-exclusive group can't hold a positional subcommand).
     """
     parser = argparse.ArgumentParser(
-        prog="ccswap map",
+        prog="cswap map",
         description=(
-            "Map a stored account to a directory so `ccswap run` (with no "
+            "Map a stored account to a directory so `cswap run` (with no "
             "account) auto-launches it there. With no arguments, lists all "
             "mappings."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ccswap map 2 ~/work/client-app
-  ccswap map user@example.com          # map the current directory
-  ccswap map                           # list all mappings
+  cswap map 2 ~/work/client-app
+  cswap map user@example.com          # map the current directory
+  cswap map                           # list all mappings
         """,
     )
     parser.add_argument(
@@ -368,9 +368,9 @@ Examples:
 
 
 def _unmap_command(argv: list[str]) -> None:
-    """Handle `ccswap unmap [PATH]` — remove a directory→account mapping."""
+    """Handle `cswap unmap [PATH]` — remove a directory→account mapping."""
     parser = argparse.ArgumentParser(
-        prog="ccswap unmap",
+        prog="cswap unmap",
         description="Remove a directory → account mapping (default: current directory).",
     )
     parser.add_argument(
@@ -404,7 +404,7 @@ def _unmap_command(argv: list[str]) -> None:
 
 
 def _unclaimed_command(argv: list[str]) -> None:
-    """Handle `ccswap unclaimed [--purge ID]` — inspect or drop a stash row.
+    """Handle `cswap unclaimed [--purge ID]` — inspect or drop a stash row.
 
     The stash holds credential bytes a switch or a consume gate could not
     attribute to a slot. Rows normally clear themselves (the next gate pass
@@ -418,7 +418,7 @@ def _unclaimed_command(argv: list[str]) -> None:
         prog=f"{_prog_name()} unclaimed",
         description=(
             "List stashed credential entries, or purge one by id. "
-            "Purging deletes the bytes — recovery is /login + `ccswap add`."
+            "Purging deletes the bytes — recovery is /login + `cswap add`."
         ),
     )
     parser.add_argument(
@@ -458,7 +458,7 @@ def _unclaimed_command(argv: list[str]) -> None:
 
 
 def _swap_command(argv: list[str]) -> None:
-    """Handle `ccswap swap NUM|EMAIL|ALIAS NUM|EMAIL|ALIAS`.
+    """Handle `cswap swap NUM|EMAIL|ALIAS NUM|EMAIL|ALIAS`.
 
     Exchanges the two accounts' slot numbers (list order and numeric
     targets). Pre-dispatched before the main parser for the same reason as
@@ -469,14 +469,14 @@ def _swap_command(argv: list[str]) -> None:
         prog=f"{_prog_name()} swap",
         description=(
             "Exchange two accounts' slot numbers, so they trade places in "
-            "`ccswap list` and as numeric targets. Aliases, backups, and "
+            "`cswap list` and as numeric targets. Aliases, backups, and "
             "session history move with their account."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ccswap swap 1 2
-  ccswap swap dev user@example.com
+  cswap swap 1 2
+  cswap swap dev user@example.com
         """,
     )
     parser.add_argument("first", metavar="NUM|EMAIL|ALIAS", help="One account")
@@ -503,7 +503,7 @@ Examples:
 
 
 def _move_command(argv: list[str]) -> None:
-    """Handle `ccswap move NUM|EMAIL|ALIAS SLOT`.
+    """Handle `cswap move NUM|EMAIL|ALIAS SLOT`.
 
     Assigns an account to a specific slot number. If the slot is empty the
     account is relocated there (its old slot is freed); if it is occupied the
@@ -520,9 +520,9 @@ def _move_command(argv: list[str]) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ccswap move user@example.com 1   move an account onto shortcut 1
-  ccswap move dev 1                by alias
-  ccswap move 2 1                  by number (swaps if slot 1 is taken)
+  cswap move user@example.com 1   move an account onto shortcut 1
+  cswap move dev 1                by alias
+  cswap move 2 1                  by number (swaps if slot 1 is taken)
         """,
     )
     parser.add_argument("account", metavar="NUM|EMAIL|ALIAS", help="Account to move")
@@ -556,7 +556,7 @@ Examples:
 
 
 def _alias_command(argv: list[str]) -> None:
-    """Handle `ccswap alias [NUM|EMAIL] [NAME] [--unset]`.
+    """Handle `cswap alias [NUM|EMAIL] [NAME] [--unset]`.
 
     With no arguments, lists all aliases. Otherwise sets (or, with --unset,
     removes) the alias for the given account. Pre-dispatched before the main
@@ -564,7 +564,7 @@ def _alias_command(argv: list[str]) -> None:
     mutually-exclusive group can't hold a positional subcommand).
     """
     parser = argparse.ArgumentParser(
-        prog="ccswap alias",
+        prog="cswap alias",
         description=(
             "Set, remove, or list a short display alias for an account. "
             "Once set, the alias can be used anywhere an account number or "
@@ -573,10 +573,10 @@ def _alias_command(argv: list[str]) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ccswap alias 2 dev
-  ccswap alias user@example.com dev
-  ccswap alias 2 --unset
-  ccswap alias                         # list all aliases
+  cswap alias 2 dev
+  cswap alias user@example.com dev
+  cswap alias 2 --unset
+  cswap alias                         # list all aliases
         """,
     )
     parser.add_argument(
@@ -631,7 +631,7 @@ Examples:
 
 
 def _icon_command(argv: list[str]) -> None:
-    """Handle `ccswap icon [NUM|EMAIL] [EMOJI] [--unset]`.
+    """Handle `cswap icon [NUM|EMAIL] [EMOJI] [--unset]`.
 
     With no arguments, lists all icons. Otherwise sets (or, with --unset,
     removes) the display icon for the given account. Pre-dispatched before the
@@ -641,7 +641,7 @@ def _icon_command(argv: list[str]) -> None:
     account identifier, so nothing else in the CLI has to learn about it.
     """
     parser = argparse.ArgumentParser(
-        prog="ccswap icon",
+        prog="cswap icon",
         description=(
             "Set, remove, or list a display icon (emoji) for an account. "
             "Icons are shown in the menu bar and in the Raycast extension to "
@@ -651,10 +651,10 @@ def _icon_command(argv: list[str]) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ccswap icon 1 💼
-  ccswap icon user@example.com 🏠
-  ccswap icon 1 --unset
-  ccswap icon                          # list all icons
+  cswap icon 1 💼
+  cswap icon user@example.com 🏠
+  cswap icon 1 --unset
+  cswap icon                          # list all icons
         """,
     )
     parser.add_argument(
@@ -709,7 +709,7 @@ Examples:
 
 
 def _threshold_command(argv: list[str]) -> None:
-    """Handle `ccswap threshold [NUM|EMAIL|ALIAS] [PCT] [--unset]`.
+    """Handle `cswap threshold [NUM|EMAIL|ALIAS] [PCT] [--unset]`.
 
     With no arguments, prints the global `autoswitch.threshold` and every
     per-account override. Otherwise sets (or, with --unset, removes) one
@@ -721,7 +721,7 @@ def _threshold_command(argv: list[str]) -> None:
     touched, so a rejected value leaves `sequence.json` byte-identical.
     """
     parser = argparse.ArgumentParser(
-        prog="ccswap threshold",
+        prog="cswap threshold",
         description=(
             "Set, remove, or list a per-account switch-away threshold. The "
             "per-account value replaces autoswitch.threshold for that account "
@@ -731,10 +731,10 @@ def _threshold_command(argv: list[str]) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Examples:
-  ccswap threshold 2 85
-  ccswap threshold user@example.com 99.9
-  ccswap threshold 2 --unset           # back to the global default
-  ccswap threshold                     # list the global default and overrides
+  cswap threshold 2 85
+  cswap threshold user@example.com 99.9
+  cswap threshold 2 --unset           # back to the global default
+  cswap threshold                     # list the global default and overrides
 
 Valid range: {ACCOUNT_THRESHOLD_MIN:g}-{ACCOUNT_THRESHOLD_MAX:g} (percent used).
         """,
@@ -818,7 +818,7 @@ def _print_threshold_table(switcher: ClaudeAccountSwitcher) -> None:
 
 
 def _auto_command(argv: list[str]) -> None:
-    """Handle `ccswap auto [--once] [--json] [...]`.
+    """Handle `cswap auto [--once] [--json] [...]`.
 
     Pre-dispatched before the main parser is built, like `run` (and with the
     same limitation: `auto` must be the first argument). Runs the auto-switch
@@ -831,7 +831,7 @@ def _auto_command(argv: list[str]) -> None:
     import time as _time
 
     parser = argparse.ArgumentParser(
-        prog="ccswap auto",
+        prog="cswap auto",
         description=(
             "Automatically switch accounts when the active one nears its "
             "5h/7d rate limit. Runs a foreground polling loop; use --once "
@@ -846,13 +846,13 @@ Exit codes with --once:
   3  blocked: wanted to switch but no viable target / all exhausted
 
 Examples:
-  ccswap auto                       # foreground loop, switch at 90% used
-  ccswap auto --threshold 80        # switch earlier
-  ccswap auto --weekly-threshold 97 # let the weekly window run higher before switching
-  ccswap auto --model Fable         # also switch when the Fable weekly limit is hit
-  ccswap auto --json                # one JSON event per line (for scripts)
-  ccswap auto --once; echo $?       # single tick, outcome in exit code
-  ccswap auto --dry-run             # log decisions, never actually switch
+  cswap auto                       # foreground loop, switch at 90% used
+  cswap auto --threshold 80        # switch earlier
+  cswap auto --weekly-threshold 97 # let the weekly window run higher before switching
+  cswap auto --model Fable         # also switch when the Fable weekly limit is hit
+  cswap auto --json                # one JSON event per line (for scripts)
+  cswap auto --once; echo $?       # single tick, outcome in exit code
+  cswap auto --dry-run             # log decisions, never actually switch
 
 Defaults live in settings.json in the backup root; flags override them.
         """,
@@ -890,7 +890,7 @@ Defaults live in settings.json in the backup root; flags override them.
         help=(
             "Separate switch line for the 7-day and per-model weekly windows "
             "(50-99.9; default: the threshold). A flag cannot unset a "
-            "configured value; use 'ccswap config unset'"
+            "configured value; use 'cswap config unset'"
         ),
     )
     parser.add_argument(
@@ -1007,13 +1007,13 @@ Defaults live in settings.json in the backup root; flags override them.
 
 
 def _config_command(argv: list[str]) -> None:
-    """Handle `ccswap config [list|get KEY|set KEY VALUE|unset KEY|path]`.
+    """Handle `cswap config [list|get KEY|set KEY VALUE|unset KEY|path]`.
 
     Pre-dispatched before the main parser is built, like `run` and `auto`
     (same limitation: `config` must be the first argument). Edits
     settings.json in the backup root with strict validation — unlike loading,
     which forgivingly clamps — so a typo'd key or out-of-range value errors
-    loudly here instead of silently degrading at `ccswap auto` time.
+    loudly here instead of silently degrading at `cswap auto` time.
     """
     from claude_swap.settings import (
         SETTING_SPECS,
@@ -1030,7 +1030,7 @@ def _config_command(argv: list[str]) -> None:
         for spec in SETTING_SPECS.values()
     )
     parser = argparse.ArgumentParser(
-        prog="ccswap config",
+        prog="cswap config",
         description=(
             "Read and edit claude-swap settings (settings.json in the "
             "backup root)."
@@ -1041,12 +1041,12 @@ Keys:
 {key_lines}
 
 Examples:
-  ccswap config                              # list effective settings
-  ccswap config get autoswitch.threshold
-  ccswap config set autoswitch.threshold 80
-  ccswap config set autoswitch.weeklyThreshold 97  # own line for the 7d/per-model windows
-  ccswap config unset autoswitch.threshold   # back to the default
-  ccswap config path                         # where settings.json lives
+  cswap config                              # list effective settings
+  cswap config get autoswitch.threshold
+  cswap config set autoswitch.threshold 80
+  cswap config set autoswitch.weeklyThreshold 97  # own line for the 7d/per-model windows
+  cswap config unset autoswitch.threshold   # back to the default
+  cswap config path                         # where settings.json lives
         """,
     )
     parser.add_argument(
@@ -1066,7 +1066,7 @@ Examples:
     p_get.add_argument("key", metavar="KEY", help="Dotted key, e.g. autoswitch.threshold")
     for p in (p_list, p_get):
         # SUPPRESS: without it the subparser's False default would clobber a
-        # pre-verb `ccswap config --json` in the shared namespace.
+        # pre-verb `cswap config --json` in the shared namespace.
         p.add_argument(
             "--json",
             action="store_true",
@@ -1200,7 +1200,7 @@ def _menubar_service(args) -> int:
         print(f"  logs:  {result['stderr_log']}")
         print(
             dimmed(
-                "It starts at login from now on. Re-run this after a ccswap "
+                "It starts at login from now on. Re-run this after a cswap "
                 "upgrade to point launchd at the new build."
             )
         )
@@ -1208,7 +1208,7 @@ def _menubar_service(args) -> int:
             # The hint printed above is about upgrades. A reinstall does not
             # restart the service that is already running, so say that here.
             warning(
-                unsupported + "\n  Then run: ccswap menubar --install-service",
+                unsupported + "\n  Then run: cswap menubar --install-service",
                 file=sys.stderr,
             )
         return 0
@@ -1224,7 +1224,7 @@ def _menubar_service(args) -> int:
     result = launch_agent.status()
     if not result["installed"] and not result["loaded"]:
         print("Menu bar service is not installed.")
-        print(dimmed("Install it with: ccswap menubar --install-service"))
+        print(dimmed("Install it with: cswap menubar --install-service"))
         return 0
     state = result["state"] or ("loaded" if result["loaded"] else "stopped")
     pid = f" (pid {result['pid']})" if result["pid"] else ""
@@ -1289,13 +1289,13 @@ def main() -> None:
         _move_command(argv[1:])
         return
 
-    # Bare `ccswap` in an interactive terminal opens the TUI dashboard (like
+    # Bare `cswap` in an interactive terminal opens the TUI dashboard (like
     # lazygit/k9s). TTY-gated on both ends so scripts and pipes keep getting
-    # the usage error, and `ccswap tui` stays the explicit spelling.
+    # the usage error, and `cswap tui` stays the explicit spelling.
     if not argv and sys.stdout.isatty() and sys.stdin.isatty():
         argv = ["--tui"]
 
-    # Memorable subcommands (`ccswap switch <email>`, `ccswap list`, `ccswap help`, ...)
+    # Memorable subcommands (`cswap switch <email>`, `cswap list`, `cswap help`, ...)
     # are rewritten to the equivalent flags so the original `--flag` interface
     # keeps working unchanged.
     argv = _translate_subcommand(argv)
